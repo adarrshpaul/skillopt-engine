@@ -112,8 +112,10 @@ def run_task_graph(goal: str):
 
         # Verification step
         if test_cmd:
-            print(f"   Running verification: `{test_cmd}`...")
-            res = subprocess.run(test_cmd, shell=True, capture_output=True, text=True)
+            # Safely replace generic python with sys.executable
+            exec_cmd = test_cmd.replace("python -m pytest", f"{sys.executable} -m unittest").replace("python ", f"{sys.executable} ")
+            print(f"   Running verification: `{exec_cmd}`...")
+            res = subprocess.run(exec_cmd, shell=True, capture_output=True, text=True)
             if res.returncode == 0:
                 print(f"   ✅ Verification Passed!")
             else:

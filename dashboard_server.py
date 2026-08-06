@@ -120,6 +120,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
             }).encode("utf-8"))
             return
 
+        elif path == "/api/files":
+            workspace = "/Users/adarrsh/workspace"
+            files_list = []
+            for root, dirs, files in os.walk(workspace):
+                if any(ignored in root for ignored in [".git", "__pycache__", "models", "fused_model", "node_modules"]):
+                    continue
+                for f in files:
+                    if f.endswith((".py", ".json", ".md", ".html", ".sh", ".jsonl")):
+                        rel_path = os.path.relpath(os.path.join(root, f), workspace)
+                        files_list.append(rel_path)
+            self._set_headers(200)
+            self.wfile.write(json.dumps({"files": sorted(files_list)}).encode("utf-8"))
+            return
+
+        elif path == "/api/dpo_logs":
+            dpo_path = "/Users/adarrsh/workspace/dpo_logs.jsonl"
+            logs = []
+            if os.path.exists(dpo_path):
+                with open(dpo_path, "r") as f:
+                    for line in f:
+                        if line.strip():
+                            try:
+                                logs.append(json.loads(line))
+                            except:
+                                pass
+            self._set_headers(200)
+            self.wfile.write(json.dumps({"dpo_logs": logs}).encode("utf-8"))
+            return
+
         self._set_headers(404)
         self.wfile.write(json.dumps({"error": "Endpoint not found"}).encode("utf-8"))
 
@@ -146,6 +175,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             conn.close()
             self._set_headers(201)
             self.wfile.write(json.dumps({"status": "created", "project_id": project_id, "name": name}).encode("utf-8"))
+            return
+
+        elif path == "/api/orchestrate":
+            goal = data.get("goal", "Create a hello world python script")
+            project_id = data.get("project_id", "proj-default")
+            
+            # Log the orchestration start
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO interactions (project_id, task_prompt, status, latency_ms, code_output, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                (project_id, f"ORCHESTRATE: {goal}", "ORCHESTRATING", 0.0, "Orchestrator launched in background...", datetime.datetime.now().isoformat())
+            )
+            conn.commit()
+            conn.close()
+
+            # Launch orchestrator in background
+            orchestrator_path = "/Users/adarrsh/workspace/orchestrator.py"
+            subprocess.Popen([sys.executable, orchestrator_path, goal], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            self._set_headers(202)
+            self.wfile.write(json.dumps({"status": "orchestrating", "goal": goal}).encode("utf-8"))
             return
 
         elif path == "/api/experiment":

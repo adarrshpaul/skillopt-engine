@@ -1,272 +1,379 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SkillOpt Engine — Standard Developer Console</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --border: #334155;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --accent: #38bdf8;
-      --success: #10b981;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkillOpt Engine - AI IDE</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --sidebar-bg: #252526;
+            --panel-bg: #1e1e1e;
+            --header-bg: #333333;
+            --border-color: #454545;
+            --text-primary: #cccccc;
+            --text-secondary: #999999;
+            --accent-color: #007acc;
+            --accent-hover: #005f9e;
+            --error-color: #f14c4c;
+            --success-color: #89d185;
+            --font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+        }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Inter', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      padding: 1.5rem;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      gap: 1.25rem;
-    }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            font-size: 13px;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
 
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-bottom: 1rem;
-      border-bottom: 1px solid var(--border);
-    }
+        /* Sidebar - File Explorer */
+        .sidebar {
+            width: 250px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            padding: 10px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .file-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 0;
+            list-style: none;
+            margin: 0;
+        }
+        .file-item {
+            padding: 4px 10px 4px 20px;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .file-item:hover {
+            background-color: #37373d;
+        }
 
-    .brand h1 { font-size: 1.25rem; font-weight: 600; }
-    .brand p { font-size: 0.85rem; color: var(--muted); font-family: 'Fira Code', monospace; }
+        /* Main Workspace */
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--panel-bg);
+        }
 
-    .controls { display: flex; gap: 0.75rem; align-items: center; }
+        /* Top Panel - Orchestrator Input */
+        .top-panel {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            background-color: var(--panel-bg);
+        }
+        .top-panel h2 {
+            margin: 0 0 10px 0;
+            font-size: 18px;
+            font-weight: normal;
+        }
+        .orchestrate-box {
+            display: flex;
+            gap: 10px;
+        }
+        .orchestrate-box input {
+            flex: 1;
+            background-color: #3c3c3c;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px;
+            font-family: var(--font-family);
+            outline: none;
+        }
+        .orchestrate-box input:focus {
+            border-color: var(--accent-color);
+        }
+        .orchestrate-box button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: var(--font-family);
+            transition: background 0.2s;
+        }
+        .orchestrate-box button:hover {
+            background-color: var(--accent-hover);
+        }
 
-    select, button, input {
-      font-family: 'Fira Code', monospace;
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 0.5rem 0.85rem;
-      border-radius: 6px;
-      font-size: 0.85rem;
-      outline: none;
-    }
+        /* Tabs */
+        .tabs {
+            display: flex;
+            background-color: var(--sidebar-bg);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            border-right: 1px solid var(--border-color);
+        }
+        .tab.active {
+            background-color: var(--panel-bg);
+            color: var(--text-primary);
+            border-top: 2px solid var(--accent-color);
+        }
 
-    button.btn-primary {
-      background: #0284c7;
-      border: none;
-      font-weight: 600;
-      cursor: pointer;
-    }
+        /* Tab Content Areas */
+        .tab-content {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .tab-content.active {
+            display: block;
+        }
 
-    .layout-grid {
-      display: grid;
-      grid-template-columns: 300px 1fr;
-      gap: 1.25rem;
-      flex: 1;
-    }
+        /* DPO Logs View */
+        .dpo-card {
+            background-color: #252526;
+            border: 1px solid var(--border-color);
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .dpo-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: var(--accent-color);
+        }
+        .dpo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .code-box {
+            background-color: #1e1e1e;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+            white-space: pre;
+            color: #d4d4d4;
+        }
+        .error-text {
+            color: var(--error-color);
+            margin-top: 10px;
+        }
 
-    .panel {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
+        /* Bottom Terminal Panel */
+        .terminal {
+            height: 250px;
+            background-color: #1e1e1e;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+        .terminal-header {
+            background-color: var(--header-bg);
+            padding: 5px 10px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+        .terminal-output {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            color: #d4d4d4;
+        }
+        .log-entry { margin-bottom: 4px; }
+        .log-time { color: var(--text-secondary); margin-right: 10px; }
+        .log-status-SUCCESS { color: var(--success-color); }
+        .log-status-ORCHESTRATING { color: var(--accent-color); }
 
-    .panel-title {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .metric-row {
-      display: flex;
-      justify-content: space-between;
-      font-family: 'Fira Code', monospace;
-      font-size: 0.85rem;
-      padding: 0.4rem 0;
-      border-bottom: 1px solid #2d3748;
-    }
-
-    .prompt-box {
-      display: flex;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-    }
-
-    .prompt-input {
-      flex: 1;
-      font-family: 'Fira Code', monospace;
-      background: #090d16;
-      border: 1px solid var(--border);
-      color: var(--success);
-    }
-
-    pre.code-block {
-      font-family: 'Fira Code', monospace;
-      font-size: 0.85rem;
-      background: #090d16;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 1rem;
-      overflow: auto;
-      flex: 1;
-      white-space: pre-wrap;
-      color: #e2e8f0;
-    }
-
-    .log-item {
-      font-family: 'Fira Code', monospace;
-      font-size: 0.8rem;
-      background: #090d16;
-      padding: 0.6rem;
-      border-radius: 4px;
-      border-left: 3px solid var(--success);
-      margin-bottom: 0.5rem;
-    }
-  </style>
+    </style>
 </head>
 <body>
 
-  <header>
-    <div class="brand">
-      <h1>SkillOpt Engine — Standard Developer Console</h1>
-      <p>Local SQLite Database (`projects.db`) | Port 8900</p>
-    </div>
-    <div class="controls">
-      <label style="font-size:0.85rem; color:var(--muted);">Project:</label>
-      <select id="projectSelect" onchange="loadProjectData()"></select>
-      <button class="btn-primary" onclick="promptNewProject()">+ New Project</button>
-    </div>
-  </header>
-
-  <div class="layout-grid">
-    
-    <!-- Left Panel: Database & System Telemetry -->
-    <div class="panel">
-      <div class="panel-title">System & Database Status</div>
-      <div class="metric-row"><span>Active Project</span><strong id="valProjectId" style="color:var(--accent);">proj-default</strong></div>
-      <div class="metric-row"><span>Logged Tasks</span><strong id="valTotalTasks">0</strong></div>
-      <div class="metric-row"><span>Database Path</span><span>projects.db</span></div>
-      <div class="metric-row"><span>AST Health</span><strong style="color:var(--success);">100% PASS</strong></div>
-
-      <div class="panel-title" style="margin-top:1rem;">Verified Test Suites</div>
-      <div style="font-size:0.8rem; color:var(--muted); line-height:1.5;">
-        • <code>test_suite.py</code> (3/3 Passed)<br>
-        • <code>run_benchmarks.py</code> (37/37 Files)<br>
-        • <code>dpo_train.py</code> (Loss: 0.0318)
-      </div>
+    <!-- Sidebar File Explorer -->
+    <div class="sidebar">
+        <div class="sidebar-header">Explorer</div>
+        <ul class="file-list" id="fileTree">
+            <li class="file-item">Loading workspace...</li>
+        </ul>
     </div>
 
-    <!-- Right Panel: Direct Code Execution & Database Stream -->
-    <div class="panel">
-      <div class="panel-title">Task Execution & Code Output</div>
-
-      <div class="prompt-box">
-        <input type="text" id="cmdInput" class="prompt-input" value="Write a python function is_even(n: int) -> bool." placeholder="Enter python task prompt...">
-        <button class="btn-primary" onclick="runTask()">Run Task</button>
-      </div>
-
-      <div style="font-size:0.8rem; color:var(--muted); font-weight:600;">Generated Python Code Output:</div>
-      <pre class="code-block" id="codeOutput"># Python Code Output Window
-def is_even(n: int) -> bool:
-    """Returns True if n is even."""
-    return n % 2 == 0</pre>
-
-      <div style="font-size:0.8rem; color:var(--muted); font-weight:600; margin-top:0.5rem;">Recorded Database Interactions (`projects.db`):</div>
-      <div id="logsContainer" style="overflow-y:auto; max-height:200px;">
-        <div class="log-item">Loading recorded interaction logs...</div>
-      </div>
-    </div>
-
-  </div>
-
-  <script>
-    async function loadProjects() {
-      try {
-        const res = await fetch('/api/projects');
-        const projects = await res.json();
-        const select = document.getElementById('projectSelect');
-        select.innerHTML = '';
-        projects.forEach(p => {
-          const opt = document.createElement('option');
-          opt.value = p.project_id;
-          opt.textContent = `${p.name} (${p.project_id})`;
-          select.appendChild(opt);
-        });
-        if (projects.length > 0) loadProjectData();
-      } catch(e) { console.error(e); }
-    }
-
-    async function loadProjectData() {
-      const projectId = document.getElementById('projectSelect').value;
-      document.getElementById('valProjectId').textContent = projectId;
-
-      try {
-        const res = await fetch(`/api/interactions?project_id=${projectId}`);
-        const logs = await res.json();
+    <!-- Main Workspace -->
+    <div class="workspace">
         
-        document.getElementById('valTotalTasks').textContent = logs.length;
-        const container = document.getElementById('logsContainer');
-        container.innerHTML = '';
+        <!-- Orchestrator Panel -->
+        <div class="top-panel">
+            <h2>Multi-Agent Orchestrator (Gemma-4 + Ornith-9B)</h2>
+            <div class="orchestrate-box">
+                <input type="text" id="goalInput" placeholder="Describe a project goal (e.g. 'Build a python module for formatting dates with type hints')">
+                <button onclick="launchOrchestrator()">Build Project</button>
+            </div>
+        </div>
 
-        if (logs.length === 0) {
-          container.innerHTML = '<div style="color:var(--muted); font-size:0.8rem;">No database entries yet for this project.</div>';
-          return;
+        <!-- Editor Tabs -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('editor')">Output Editor</div>
+            <div class="tab" onclick="switchTab('dpo')">Self-Improving Flywheel (DPO)</div>
+        </div>
+
+        <!-- Editor Tab -->
+        <div id="tab-editor" class="tab-content active">
+            <p style="color: var(--text-secondary);">Select a file from the explorer to view its contents, or run the orchestrator to build a new project.</p>
+            <div class="code-box" id="mainEditor" style="height: 100%; min-height: 300px; display: none;"></div>
+        </div>
+
+        <!-- DPO Flywheel Tab -->
+        <div id="tab-dpo" class="tab-content">
+            <p><strong>DPO Self-Correction Logs</strong> (Parsed from <code>dpo_logs.jsonl</code>)</p>
+            <div id="dpoContainer">Loading self-correction loops...</div>
+        </div>
+
+        <!-- Terminal Bottom Panel -->
+        <div class="terminal">
+            <div class="terminal-header">TERMINAL / ACTIVITY LOG</div>
+            <div class="terminal-output" id="terminalOutput">
+                <div class="log-entry"><span class="log-time">[System]</span> Initializing IDE...</div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const API_BASE = "http://localhost:8900/api";
+
+        // Tab Switching
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tab-' + tabId).classList.add('active');
+            if (tabId === 'dpo') fetchDPOLogs();
         }
 
-        if (logs[0].code_output) {
-          document.getElementById('codeOutput').textContent = logs[0].code_output;
+        // Fetch Files
+        async function fetchFiles() {
+            try {
+                const res = await fetch(`${API_BASE}/files`);
+                const data = await res.json();
+                const tree = document.getElementById("fileTree");
+                tree.innerHTML = "";
+                data.files.forEach(f => {
+                    const li = document.createElement("li");
+                    li.className = "file-item";
+                    li.textContent = "📄 " + f;
+                    li.onclick = () => alert("File selected: " + f + "\\n(File viewing to be fully wired up next!)");
+                    tree.appendChild(li);
+                });
+            } catch (e) {
+                console.error(e);
+            }
         }
 
-        logs.forEach(l => {
-          const div = document.createElement('div');
-          div.className = 'log-item';
-          div.innerHTML = `[${l.timestamp.split('T')[1].split('.')[0]}] <strong>${l.task_prompt}</strong> (${l.latency_ms}ms) -> ${l.status}`;
-          container.appendChild(div);
-        });
-      } catch(e) { console.error(e); }
-    }
+        // Fetch Interactions / Terminal Output
+        async function fetchInteractions() {
+            try {
+                const res = await fetch(`${API_BASE}/interactions?project_id=proj-default`);
+                const data = await res.json();
+                const term = document.getElementById("terminalOutput");
+                term.innerHTML = "";
+                data.reverse().forEach(log => {
+                    const div = document.createElement("div");
+                    div.className = "log-entry";
+                    const time = new Date(log.timestamp).toLocaleTimeString();
+                    const statusClass = \`log-status-\${log.status}\`;
+                    div.innerHTML = \`<span class="log-time">[\${time}]</span> <span class="\${statusClass}">[\${log.status}]</span> \${log.task_prompt}\`;
+                    term.appendChild(div);
+                });
+                term.scrollTop = term.scrollHeight;
+            } catch (e) {
+                console.error(e);
+            }
+        }
 
-    async function runTask() {
-      const promptText = document.getElementById('cmdInput').value;
-      const projectId = document.getElementById('projectSelect').value;
+        // Fetch DPO Flywheel Logs
+        async function fetchDPOLogs() {
+            try {
+                const res = await fetch(`${API_BASE}/dpo_logs`);
+                const data = await res.json();
+                const container = document.getElementById("dpoContainer");
+                container.innerHTML = "";
+                
+                if (!data.dpo_logs || data.dpo_logs.length === 0) {
+                    container.innerHTML = "<p>No self-correction loops logged yet.</p>";
+                    return;
+                }
 
-      document.getElementById('codeOutput').textContent = 'Executing Python code generation...';
+                data.dpo_logs.reverse().forEach(log => {
+                    const card = document.createElement("div");
+                    card.className = "dpo-card";
+                    card.innerHTML = \`
+                        <div class="dpo-header">Task: \${log.prompt}</div>
+                        <div class="error-text">❌ Failed Verification: \${log.error || 'Unknown error'}</div>
+                        <div class="dpo-grid">
+                            <div>
+                                <div style="color:var(--error-color); margin-bottom:5px;">Rejected Code (Failed)</div>
+                                <div class="code-box">\${log.rejected.substring(0, 300)}...</div>
+                            </div>
+                            <div>
+                                <div style="color:var(--success-color); margin-bottom:5px;">Chosen Code (Self-Corrected)</div>
+                                <div class="code-box">\${log.chosen ? log.chosen.substring(0, 300) + '...' : 'No recovery generated.'}</div>
+                            </div>
+                        </div>
+                    \`;
+                    container.appendChild(card);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
 
-      try {
-        const res = await fetch('/api/experiment', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({prompt: promptText, project_id: projectId})
-        });
-        const data = await res.json();
-        document.getElementById('codeOutput').textContent = data.steered.text;
-        loadProjectData();
-      } catch(e) { alert('Task execution failed: ' + e); }
-    }
+        // Launch Orchestrator
+        async function launchOrchestrator() {
+            const input = document.getElementById("goalInput");
+            const goal = input.value.trim();
+            if (!goal) return;
 
-    async function promptNewProject() {
-      const name = prompt("Enter project name:");
-      if (!name) return;
-      try {
-        await fetch('/api/projects', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({name: name})
-        });
-        loadProjects();
-      } catch(e) { alert(e); }
-    }
+            input.value = "";
+            const term = document.getElementById("terminalOutput");
+            term.innerHTML += \`<div class="log-entry"><span class="log-time">[\${new Date().toLocaleTimeString()}]</span> <span style="color:var(--accent-color)">[ORCHESTRATING]</span> Launching Gemma-4 + Ornith pipeline for: "\${goal}"...</div>\`;
+            term.scrollTop = term.scrollHeight;
 
-    loadProjects();
-  </script>
+            try {
+                await fetch(`${API_BASE}/orchestrate`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ goal: goal, project_id: "proj-default" })
+                });
+                
+                // Poll for updates every 3 seconds
+                setTimeout(() => {
+                    fetchInteractions();
+                    fetchFiles();
+                }, 3000);
+            } catch (e) {
+                alert("Error launching orchestrator: " + e);
+            }
+        }
+
+        // Init
+        fetchFiles();
+        fetchInteractions();
+        setInterval(fetchInteractions, 5000);
+        setInterval(fetchFiles, 5000);
+    </script>
 </body>
 </html>

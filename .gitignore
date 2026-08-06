@@ -13,4 +13,7 @@ fused_model/
 *.pt
 *.tar.gz
 .DS_Store
-projects.db
+projects/
+task_graph.json
+dpo_logs.jsonl
+*.db

@@ -121,17 +121,47 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         elif path == "/api/files":
-            workspace = "/Users/adarrsh/workspace"
+            workspace_dir = "/Users/adarrsh/workspace"
             files_list = []
-            for root, dirs, files in os.walk(workspace):
-                if any(ignored in root for ignored in [".git", "__pycache__", "models", "fused_model", "node_modules"]):
+            for root, dirs, files in os.walk(workspace_dir):
+                if ".git" in root or ".tasks" in root or "__pycache__" in root:
                     continue
-                for f in files:
-                    if f.endswith((".py", ".json", ".md", ".html", ".sh", ".jsonl")):
-                        rel_path = os.path.relpath(os.path.join(root, f), workspace)
+                for file in files:
+                    if file.endswith((".py", ".md", ".json", ".jsonl", ".txt")):
+                        rel_path = os.path.relpath(os.path.join(root, file), workspace_dir)
                         files_list.append(rel_path)
+            
             self._set_headers(200)
             self.wfile.write(json.dumps({"files": sorted(files_list)}).encode("utf-8"))
+            return
+
+        elif path == "/api/file":
+            filepath = query.get("path", [""])[0]
+            if not filepath:
+                self._set_headers(400)
+                self.wfile.write(json.dumps({"error": "Path required"}).encode("utf-8"))
+                return
+                
+            full_path = os.path.join("/Users/adarrsh/workspace", filepath)
+            # Security check
+            if not os.path.abspath(full_path).startswith("/Users/adarrsh/workspace"):
+                self._set_headers(403)
+                self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                return
+                
+            if not os.path.exists(full_path):
+                self._set_headers(404)
+                self.wfile.write(json.dumps({"error": "File not found"}).encode("utf-8"))
+                return
+                
+            try:
+                with open(full_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"content": content, "path": filepath}).encode("utf-8"))
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
             return
 
         elif path == "/api/dpo_logs":
@@ -262,24 +292,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             conn.commit()
             conn.close()
 
-            # Generate layer activation spectrum (Neuronpedia style feature activation norm map)
-            layers_activation = [round(max(0, (1 - abs(i - target_layer) / 16.0) * alpha), 2) for i in range(32)]
-
             response_payload = {
                 "unsteered": {
                     "text": unsteered_text,
                     "preamble_tokens": 14,
-                    "syntax_compliance": "85.0%"
+                    "code_tokens": int(len(steered_text.split()) * 1.3)
                 },
                 "steered": {
                     "text": steered_text,
-                    "preamble_tokens": 0,
-                    "syntax_compliance": "100.0%",
-                    "vector_norm": f"{alpha} ||v||",
+                    "code_tokens": int(len(steered_text.split()) * 1.3),
                     "target_layer": target_layer,
-                    "layer_activations": layers_activation
-                },
-                "latency_ms": latency_ms
+                    "alpha": alpha,
+                    "latency_ms": latency_ms,
+                    "status": "SUCCESS"
+                }
             }
 
             self._set_headers(200)

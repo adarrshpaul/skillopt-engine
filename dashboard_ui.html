@@ -275,11 +275,37 @@
                     const li = document.createElement("li");
                     li.className = "file-item";
                     li.textContent = "📄 " + f;
-                    li.onclick = () => alert("File selected: " + f + "\\n(File viewing to be fully wired up next!)");
+                    li.onclick = () => openFile(f);
                     tree.appendChild(li);
                 });
             } catch (e) {
                 console.error(e);
+            }
+        }
+
+        // Open and display file content
+        async function openFile(filepath) {
+            try {
+                const res = await fetch(`${API_BASE}/file?path=${encodeURIComponent(filepath)}`);
+                const data = await res.json();
+                if (data.error) {
+                    alert("Error: " + data.error);
+                    return;
+                }
+                
+                // Switch to editor tab
+                switchTab('editor');
+                
+                const editor = document.getElementById("mainEditor");
+                editor.style.display = "block";
+                
+                // Very basic syntax highlighting approach using <pre><code>
+                editor.innerHTML = `<div style="margin-bottom: 10px; color: var(--accent-color); font-weight: bold;">${filepath}</div><pre style="margin: 0; white-space: pre-wrap; font-family: monospace;"><code></code></pre>`;
+                editor.querySelector("code").textContent = data.content; // Use textContent to safely render code
+                
+            } catch (e) {
+                console.error("Failed to open file:", e);
+                alert("Failed to load file.");
             }
         }
 

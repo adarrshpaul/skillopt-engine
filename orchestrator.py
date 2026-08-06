@@ -62,13 +62,13 @@ def log_dpo_pair(prompt: str, rejected: str, chosen: str, error: str):
     print(f"  [DPO Flywheel] Logged failure/recovery pair to {DPO_LOG_PATH}")
 
 def run_task_graph(goal: str):
-    print(f"\n{'='*60}")
-    print(f"🚀 Multi-Agent Orchestrator Starting Goal:")
-    print(f"   \"{goal}\"")
-    print(f"{'='*60}\n")
+    print(f"\n{'='*60}", flush=True)
+    print(f"🚀 Multi-Agent Orchestrator Starting Goal:", flush=True)
+    print(f"   \"{goal}\"", flush=True)
+    print(f"{'='*60}\n", flush=True)
 
     # Step 1: Planner decomposes goal
-    print("🧠 [1/2] Gemma-4 (Planner) generating task graph...")
+    print("🧠 [1/2] Gemma-4 (Planner) generating task graph...", flush=True)
     planner_response = query_model(PLANNER_URL, PLANNER_SYSTEM_PROMPT, f"User Goal: {goal}")
     
     # Clean up markdown if any leaked

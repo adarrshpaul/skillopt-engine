@@ -300,7 +300,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             def run_and_stream(goal_text, proj_id):
                 orchestrator_path = "/Users/adarrsh/workspace/orchestrator.py"
                 proc = subprocess.Popen(
-                    [sys.executable, orchestrator_path, goal_text],
+                    [sys.executable, "-u", orchestrator_path, goal_text],
                     cwd="/Users/adarrsh/workspace/projects",
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,

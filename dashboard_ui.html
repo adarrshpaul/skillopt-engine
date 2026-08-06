@@ -474,6 +474,12 @@
                     term.appendChild(div);
                 });
                 term.scrollTop = term.scrollHeight;
+                
+                // If plan tab is active, refresh task graph
+                const planTab = document.getElementById("tab-plan");
+                if (planTab && planTab.classList.contains("active")) {
+                    fetchTaskGraph();
+                }
             } catch (e) {
                 console.error(e);
             }

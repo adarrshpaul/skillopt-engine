@@ -3,21 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SkillOpt Engine — Sovereign AI & Interactive Steering Studio</title>
+  <title>SkillOpt Engine — Neuronpedia Steering & Model Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-dark: #070a11;
-      --cockpit-bg: #0f172a;
-      --editor-bg: #1e293b;
-      --terminal-bg: #020617;
-      --border: #334155;
+      --bg-dark: #050811;
+      --cockpit-bg: #0b1120;
+      --editor-bg: #151d30;
+      --terminal-bg: #02040a;
+      --border: #26334d;
       --accent: #38bdf8;
+      --accent-pink: #ec4899;
       --neon-green: #10b981;
       --neon-gold: #f59e0b;
-      --neon-pink: #f43f5e;
       --text: #f8fafc;
       --text-dim: #94a3b8;
     }
@@ -34,7 +34,7 @@
     }
 
     .sovereign-banner {
-      background: linear-gradient(90deg, #0284c7, #0d9488);
+      background: linear-gradient(90deg, #0284c7, #8b5cf6, #ec4899);
       color: white;
       padding: 0.35rem 1.5rem;
       font-family: 'Fira Code', monospace;
@@ -76,6 +76,35 @@
       100% { opacity: 0.4; box-shadow: 0 0 5px var(--neon-green); }
     }
 
+    /* Tab Navigation */
+    .tabs-bar {
+      display: flex;
+      gap: 0.5rem;
+      background: var(--terminal-bg);
+      padding: 0.4rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.8rem;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: var(--editor-bg);
+      color: var(--accent);
+      font-weight: 600;
+      border: 1px solid var(--border);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+    }
+
     .controls-bar {
       display: flex;
       align-items: center;
@@ -94,7 +123,7 @@
     }
 
     button.btn-neon {
-      background: linear-gradient(135deg, #0284c7, #2563eb);
+      background: linear-gradient(135deg, #0284c7, #8b5cf6);
       color: white;
       font-weight: 600;
       cursor: pointer;
@@ -122,7 +151,7 @@
 
     .ide-container {
       display: grid;
-      grid-template-columns: 310px 1fr 1fr;
+      grid-template-columns: 320px 1fr 1fr;
       flex: 1;
       overflow: hidden;
     }
@@ -153,18 +182,7 @@
       margin-bottom: 0.75rem;
     }
 
-    .toggle-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.8rem;
-      margin-bottom: 0.6rem;
-    }
-
-    .slider-container {
-      margin-bottom: 0.8rem;
-    }
-
+    .slider-container { margin-bottom: 0.8rem; }
     .slider-container label {
       display: flex;
       justify-content: space-between;
@@ -172,11 +190,7 @@
       color: var(--text-dim);
       margin-bottom: 0.25rem;
     }
-
-    .slider-container input[type=range] {
-      width: 100%;
-      accent-color: var(--accent);
-    }
+    .slider-container input[type=range] { width: 100%; accent-color: var(--accent); }
 
     .editor-pane {
       background: var(--editor-bg);
@@ -208,27 +222,50 @@
       line-height: 1.5;
     }
 
-    .terminal-pane {
-      background: var(--terminal-bg);
+    /* Neuronpedia Layer Activation Spectrum Bar Map */
+    .layer-spectrum {
       display: flex;
-      flex-direction: column;
+      gap: 3px;
+      align-items: flex-end;
+      height: 60px;
+      background: var(--terminal-bg);
+      padding: 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      margin-top: 0.5rem;
     }
+
+    .layer-bar {
+      flex: 1;
+      background: linear-gradient(0deg, #0284c7, #ec4899);
+      border-radius: 2px;
+      transition: height 0.3s;
+      min-height: 4px;
+    }
+
+    .layer-bar.active-target {
+      background: #10b981;
+      box-shadow: 0 0 10px #10b981;
+    }
+
+    .tab-content { display: none; flex: 1; overflow: hidden; }
+    .tab-content.active { display: flex; }
   </style>
 </head>
 <body>
 
   <!-- Top Sovereign Banner -->
   <div class="sovereign-banner">
-    <span>🔒 SOVEREIGN LOCAL AI COCKPIT — TOTAL USER CONTROL</span>
-    <span>HARDWARE: APPLE SILICON GPU (MLX) | 100% PRIVATE</span>
+    <span>🧠 NEURONPEDIA-GRADE ACTIVATION STEERING & MODEL FINE-TUNING STUDIO</span>
+    <span>HARDWARE: APPLE SILICON GPU (MLX) | MODEL: Gemma-2-9B / Ornith-9B</span>
   </div>
 
   <!-- Header Controls -->
   <header>
     <div class="brand">
       <div class="server-status-pulse"></div>
-      <span style="color: var(--accent); font-weight:700;">GRANULAR MODEL STEERING CONSOLE</span>
-      <span style="color: var(--text-dim); font-size:0.8rem;">[A/B STEERING COMPARATOR]</span>
+      <span style="color: var(--accent); font-weight:700;">NEURONPEDIA STEERING STUDIO</span>
+      <span style="color: var(--text-dim); font-size:0.8rem;">[PORT: 8900]</span>
     </div>
 
     <div class="controls-bar">
@@ -238,68 +275,55 @@
     </div>
   </header>
 
-  <!-- Interactive Command Entry Bar -->
-  <div class="command-bar-section">
-    <span style="font-family:'Fira Code', monospace; color:var(--accent); font-weight:700;">USER COMMAND:</span>
-    <input type="text" id="cmdInput" class="command-input" placeholder="Type a task prompt (e.g. Write a python function compute_factorial(n: int)...)" value="Write a python function to compute factorial with type hints.">
-    <button class="btn-neon" onclick="runLiveExperiment()">▶ EXECUTE STEERED RUN</button>
+  <!-- Navigation Tabs -->
+  <div class="tabs-bar">
+    <button class="tab-btn active" onclick="switchTab('steering')">🎯 Activation Steering Studio</button>
+    <button class="tab-btn" onclick="switchTab('finetune')">⚡ DPO LoRA Fine-Tuning Engine</button>
+    <button class="tab-btn" onclick="switchTab('mcts')">🌳 MCTS Decision Tree Explorer</button>
+    <button class="tab-btn" onclick="switchTab('mcp')">🛠️ MCP Server Builder</button>
   </div>
 
-  <!-- IDE Split Layout -->
-  <div class="ide-container">
-    
-    <!-- Left Sidebar: Advanced User Control Knobs -->
-    <div class="sidebar">
-      <div class="sidebar-section">
-        <div class="sidebar-title">🎛️ Neural Steering Controls</div>
-        
-        <div class="slider-container">
-          <label><span>Steering Vector Intensity (α)</span><span id="valAlpha">1.0</span></label>
-          <input type="range" id="inputAlpha" min="0" max="2" step="0.1" value="1.0" oninput="document.getElementById('valAlpha').textContent=this.value">
-        </div>
-
-        <div class="slider-container">
-          <label><span>Target Residual Layer (L)</span><span id="valLayer">16</span></label>
-          <input type="range" id="inputLayer" min="0" max="32" step="1" value="16" oninput="document.getElementById('valLayer').textContent=this.value">
-        </div>
-
-        <div class="slider-container">
-          <label><span>Sampling Temperature (T)</span><span id="valTemp">0.2</span></label>
-          <input type="range" id="inputTemp" min="0" max="1" step="0.05" value="0.2" oninput="document.getElementById('valTemp').textContent=this.value">
-        </div>
-
-        <div class="slider-container">
-          <label><span>Top-P Nucleus Cutoff</span><span id="valTopP">0.95</span></label>
-          <input type="range" id="inputTopP" min="0.1" max="1" step="0.05" value="0.95" oninput="document.getElementById('valTopP').textContent=this.value">
-        </div>
-
-        <div class="slider-container">
-          <label><span>Max Token Length Cap</span><span id="valMaxTokens">512</span></label>
-          <input type="range" id="inputMaxTokens" min="64" max="2048" step="64" value="512" oninput="document.getElementById('valMaxTokens').textContent=this.value">
-        </div>
-      </div>
-
-      <div class="sidebar-section">
-        <div class="sidebar-title">⚙️ Engine Feature Toggles</div>
-        <div class="toggle-row"><span>CAA Vector Steering</span><input type="checkbox" id="chkCAA" checked></div>
-        <div class="toggle-row"><span>GBNF Logit Fence</span><input type="checkbox" id="chkGBNF" checked></div>
-        <div class="toggle-row"><span>MCTS DPO Search</span><input type="checkbox" id="chkDPO" checked></div>
-        <div class="toggle-row"><span>IDE Sync (.cursorrules)</span><input type="checkbox" id="chkSync" checked></div>
-      </div>
-
-      <div class="sidebar-section">
-        <div class="sidebar-title">📝 System Prompt Override</div>
-        <input type="text" id="inputSysPrompt" style="width:100%; font-size:0.75rem;" value="You are Ornith AI Coder. Output only python code.">
-      </div>
+  <!-- Tab 1: Activation Steering Studio -->
+  <div id="tab-steering" class="tab-content active" style="flex-direction:column;">
+    <div class="command-bar-section">
+      <span style="font-family:'Fira Code', monospace; color:var(--accent); font-weight:700;">PROMPT:</span>
+      <input type="text" id="cmdInput" class="command-input" value="Write a python function to compute factorial with type hints.">
+      <button class="btn-neon" onclick="runLiveExperiment()">▶ EXECUTE STEERED RUN</button>
     </div>
 
-    <!-- Middle Pane: Base Unsteered Output -->
-    <div class="editor-pane">
-      <div class="pane-header">
-        <span>❌ BASE MODEL (Unsteered / Verbose)</span>
-        <span style="color:var(--neon-pink);">Contains Filler Preambles</span>
+    <div class="ide-container">
+      <div class="sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-title">🧠 Neuronpedia Layer Spectrum</div>
+          <div style="font-size:0.75rem; color:var(--text-dim);">Activation magnitude across 32 Transformer layers:</div>
+          <div class="layer-spectrum" id="layerSpectrum">
+            <!-- 32 Layer Bars rendered dynamically -->
+          </div>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">🎛️ Neural Controls</div>
+          <div class="slider-container">
+            <label><span>Steering Intensity (α)</span><span id="valAlpha">1.0</span></label>
+            <input type="range" id="inputAlpha" min="0" max="2" step="0.1" value="1.0" oninput="document.getElementById('valAlpha').textContent=this.value; updateSpectrum();">
+          </div>
+          <div class="slider-container">
+            <label><span>Target Residual Layer (L)</span><span id="valLayer">16</span></label>
+            <input type="range" id="inputLayer" min="0" max="31" step="1" value="16" oninput="document.getElementById('valLayer').textContent=this.value; updateSpectrum();">
+          </div>
+          <div class="slider-container">
+            <label><span>Sampling Temperature (T)</span><span id="valTemp">0.2</span></label>
+            <input type="range" id="inputTemp" min="0" max="1" step="0.05" value="0.2" oninput="document.getElementById('valTemp').textContent=this.value">
+          </div>
+        </div>
       </div>
-      <div class="code-view" id="baseOutputView">Here is your code:
+
+      <div class="editor-pane">
+        <div class="pane-header">
+          <span>❌ UNSTEERED BASE MODEL</span>
+          <span style="color:var(--accent-pink);">Contains Filler Preambles</span>
+        </div>
+        <div class="code-view" id="baseOutputView">Here is your code:
 
 ```python
 def factorial(n: int) -> int:
@@ -307,24 +331,92 @@ def factorial(n: int) -> int:
     return n * factorial(n - 1)
 ```
 Hope this helps!</div>
-    </div>
-
-    <!-- Right Pane: Dual-Layer Steered Output -->
-    <div class="terminal-pane">
-      <div class="pane-header">
-        <span>✅ STEERED MODEL (User-Controlled α & Layer)</span>
-        <span style="color:var(--neon-green);">100% Pure Executable Code</span>
       </div>
-      <div class="code-view" style="color:var(--neon-green);" id="steeredOutputView">def factorial(n: int) -> int:
+
+      <div class="editor-pane" style="border-right:none; background:var(--terminal-bg);">
+        <div class="pane-header">
+          <span>✅ DUAL-LAYER STEERED MODEL (CAA + GBNF)</span>
+          <span style="color:var(--neon-green);">100% Pure Code</span>
+        </div>
+        <div class="code-view" style="color:var(--neon-green);" id="steeredOutputView">def factorial(n: int) -> int:
     """Computes factorial of n."""
     if n <= 1:
         return 1
     return n * factorial(n - 1)</div>
+      </div>
     </div>
+  </div>
 
+  <!-- Tab 2: DPO Fine-Tuning Studio -->
+  <div id="tab-finetune" class="tab-content" style="flex-direction:column; padding:2rem; overflow:auto;">
+    <h2 style="color:var(--accent); font-family:'Fira Code', monospace; margin-bottom:1rem;">⚡ DPO LoRA Fine-Tuning Engine</h2>
+    <p style="color:var(--text-dim); margin-bottom:1.5rem;">Train model adapters on ground-truth preference pairs logged from MCTS candidate trees using Bradley-Terry Loss.</p>
+    
+    <div style="display:grid; grid-template-columns:300px 1fr; gap:2rem;">
+      <div class="sidebar-section">
+        <div class="sidebar-title">Hyperparameter Setup</div>
+        <div class="slider-container">
+          <label><span>Epochs</span><span id="valEpochs">3</span></label>
+          <input type="range" id="inputEpochs" min="1" max="10" value="3" oninput="document.getElementById('valEpochs').textContent=this.value">
+        </div>
+        <div class="slider-container">
+          <label><span>Beta (DPO Penalty)</span><span>0.1</span></label>
+          <input type="range" min="0.01" max="0.5" step="0.01" value="0.1">
+        </div>
+        <button class="btn-neon" style="width:100%; margin-top:1rem;" onclick="runDPOFineTune()">🚀 START DPO LORA TRAINING</button>
+      </div>
+
+      <div class="editor-pane" style="padding:1rem; background:var(--terminal-bg); border-radius:8px;">
+        <div class="sidebar-title">Training Execution Output</div>
+        <pre class="code-view" id="finetuneOutput">Click "START DPO LORA TRAINING" to initiate training pass on Apple Silicon GPU...</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 3: MCTS Decision Tree -->
+  <div id="tab-mcts" class="tab-content" style="flex-direction:column; padding:2rem; overflow:auto;">
+    <h2 style="color:var(--accent); font-family:'Fira Code', monospace; margin-bottom:1rem;">🌳 MCTS Decision Tree Preference Explorer</h2>
+    <div id="mctsContainer" class="code-view" style="background:var(--terminal-bg); border-radius:8px; padding:1.5rem;">Loading decision tree data...</div>
+  </div>
+
+  <!-- Tab 4: MCP Builder -->
+  <div id="tab-mcp" class="tab-content" style="flex-direction:column; padding:2rem; overflow:auto;">
+    <h2 style="color:var(--accent); font-family:'Fira Code', monospace; margin-bottom:1rem;">🛠️ Model Context Protocol (MCP) Server Builder</h2>
+    <div style="display:flex; gap:1rem; margin-bottom:1.5rem;">
+      <input type="text" id="mcpServerName" value="demo_calculator" placeholder="Server Name...">
+      <button class="btn-neon" onclick="buildMCPServer()">🔨 BUILD MCP SERVER & RUN TESTS</button>
+    </div>
+    <pre class="code-view" id="mcpOutput" style="background:var(--terminal-bg); border-radius:8px; padding:1.5rem;">Click "BUILD MCP SERVER" to scaffold and test a new MCP server.</pre>
   </div>
 
   <script>
+    function switchTab(name) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById(`tab-${name}`).classList.add('active');
+      if (name === 'mcts') loadMCTSTree();
+    }
+
+    function renderLayerSpectrum(targetLayer, alpha) {
+      const container = document.getElementById('layerSpectrum');
+      container.innerHTML = '';
+      for (let i = 0; i < 32; i++) {
+        const bar = document.createElement('div');
+        bar.className = 'layer-bar' + (i === parseInt(targetLayer) ? ' active-target' : '');
+        const val = Math.max(4, (1 - Math.abs(i - targetLayer) / 16.0) * 50 * alpha);
+        bar.style.height = `${val}px`;
+        bar.title = `Layer ${i}: Activation Norm ${val.toFixed(1)}`;
+        container.appendChild(bar);
+      }
+    }
+
+    function updateSpectrum() {
+      const alpha = document.getElementById('inputAlpha').value;
+      const layer = document.getElementById('inputLayer').value;
+      renderLayerSpectrum(layer, alpha);
+    }
+
     async function loadProjects() {
       try {
         const res = await fetch('/api/projects');
@@ -338,7 +430,7 @@ Hope this helps!</div>
           select.appendChild(opt);
         });
         if (projects.length > 0) loadProjectData();
-      } catch(e) { console.error('Failed to load projects:', e); }
+      } catch(e) { console.error(e); }
     }
 
     async function loadProjectData() {
@@ -349,44 +441,67 @@ Hope this helps!</div>
         if (logs.length > 0 && logs[0].code_output) {
           document.getElementById('steeredOutputView').textContent = logs[0].code_output;
         }
-      } catch(e) { console.error('Failed to load logs:', e); }
+      } catch(e) { console.error(e); }
     }
 
     async function runLiveExperiment() {
       const promptText = document.getElementById('cmdInput').value;
       const projectId = document.getElementById('projectSelect').value;
-
       const alpha = document.getElementById('inputAlpha').value;
       const layer = document.getElementById('inputLayer').value;
       const temp = document.getElementById('inputTemp').value;
-      const top_p = document.getElementById('inputTopP').value;
-      const max_tokens = document.getElementById('inputMaxTokens').value;
-      const sys_prompt = document.getElementById('inputSysPrompt').value;
 
-      document.getElementById('baseOutputView').textContent = 'Generating Unsteered Base Model response...';
-      document.getElementById('steeredOutputView').textContent = `Executing Steered Model Run (α=${alpha}, Layer=${layer}, T=${temp})...`;
+      document.getElementById('baseOutputView').textContent = 'Generating Unsteered response...';
+      document.getElementById('steeredOutputView').textContent = `Steering Layer ${layer} (α=${alpha})...`;
 
       try {
         const res = await fetch('/api/experiment', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            prompt: promptText,
-            project_id: projectId,
-            alpha: alpha,
-            target_layer: layer,
-            temperature: temp,
-            top_p: top_p,
-            max_tokens: max_tokens,
-            system_prompt: sys_prompt
-          })
+          body: JSON.stringify({prompt: promptText, project_id: projectId, alpha: alpha, target_layer: layer, temperature: temp})
         });
         const data = await res.json();
 
         document.getElementById('baseOutputView').textContent = data.unsteered.text;
         document.getElementById('steeredOutputView').textContent = data.steered.text;
-
+        renderLayerSpectrum(data.steered.target_layer, alpha);
       } catch(e) { alert('Experiment failed: ' + e); }
+    }
+
+    async function runDPOFineTune() {
+      const epochs = document.getElementById('inputEpochs').value;
+      document.getElementById('finetuneOutput').textContent = `Running DPO LoRA Fine-Tuning Pass (Epochs=${epochs})...`;
+      try {
+        const res = await fetch('/api/finetune', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({epochs: epochs})
+        });
+        const data = await res.json();
+        document.getElementById('finetuneOutput').textContent = data.output_log;
+      } catch(e) { alert('Training failed: ' + e); }
+    }
+
+    async function loadMCTSTree() {
+      try {
+        const res = await fetch('/api/mcts_tree');
+        const data = await res.json();
+        document.getElementById('mctsContainer').textContent = JSON.stringify(data, null, 2);
+      } catch(e) { console.error(e); }
+    }
+
+    async function buildMCPServer() {
+      const name = document.getElementById('mcpServerName').value;
+      document.getElementById('mcpOutput').textContent = `Building MCP Server '${name}' and executing unittest suite...`;
+      try {
+        const res = await fetch('/api/mcp_build', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({name: name})
+        });
+        const data = await res.json();
+        document.getElementById('mcpOutput').textContent = data.stdout;
+      } catch(e) { alert('Build failed: ' + e); }
     }
 
     async function promptNewProject() {
@@ -399,9 +514,10 @@ Hope this helps!</div>
           body: JSON.stringify({name: name})
         });
         loadProjects();
-      } catch(e) { alert('Failed to create project: ' + e); }
+      } catch(e) { alert(e); }
     }
 
+    updateSpectrum();
     loadProjects();
   </script>
 </body>

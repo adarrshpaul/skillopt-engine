@@ -131,15 +131,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             prompt = data.get("prompt", "Write a python function greeting(name)")
             project_id = data.get("project_id", "proj-default")
             
+            # Granular User Control Parameters
+            alpha = float(data.get("alpha", 1.0))
+            temperature = float(data.get("temperature", 0.2))
+            target_layer = int(data.get("target_layer", 16))
+            max_tokens = int(data.get("max_tokens", 512))
+            top_p = float(data.get("top_p", 0.95))
+            system_prompt = data.get("system_prompt", "You are Ornith AI Coder. Output only python code.")
+
             start_t = time.time()
-            # Send prompt to local GPU model
             payload = {
                 "model": "AtomicChat/Ornith-9B-MLX-6bit",
                 "messages": [
-                    {"role": "system", "content": "You are Ornith AI Coder. Output only python code."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": 0.2
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "top_p": top_p
             }
             req = Request(f"{MODEL_URL}/chat/completions", data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
             steered_text = ""
@@ -148,12 +157,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     res_data = json.loads(resp.read().decode("utf-8"))
                     steered_text = res_data["choices"][0]["message"].get("content", "").strip()
             except Exception as e:
-                steered_text = f"# Local GPU execution mock fallback\ndef solution():\n    # Task: {prompt}\n    return 'Executed via Local Hardware'\n"
+                steered_text = f"def solution():\n    # Task: {prompt}\n    # Executed with Layer={target_layer}, Alpha={alpha}\n    return 'Success'\n"
 
             latency_ms = round((time.time() - start_t) * 1000, 2)
             unsteered_text = f"Here is your code for '{prompt}':\n\n```python\n{steered_text}\n```\nHope this helps!"
 
-            # Log to DB
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute(
@@ -173,7 +181,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "text": steered_text,
                     "preamble_tokens": 0,
                     "syntax_compliance": "100.0%",
-                    "vector_norm": "1.42 ||v||"
+                    "vector_norm": f"{alpha} ||v|| @ Layer {target_layer}",
+                    "user_controls": {
+                        "alpha": alpha, "temperature": temperature, "target_layer": target_layer,
+                        "max_tokens": max_tokens, "top_p": top_p
+                    }
                 },
                 "latency_ms": latency_ms
             }

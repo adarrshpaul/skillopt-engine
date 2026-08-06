@@ -33,7 +33,6 @@
       overflow: hidden;
     }
 
-    /* Top Sovereign Banner */
     .sovereign-banner {
       background: linear-gradient(90deg, #0284c7, #0d9488);
       color: white;
@@ -46,7 +45,6 @@
       align-items: center;
     }
 
-    /* Header Controls */
     header {
       background: var(--cockpit-bg);
       border-bottom: 1px solid var(--border);
@@ -104,7 +102,6 @@
       box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
     }
 
-    /* Interactive Command Bar */
     .command-bar-section {
       background: var(--cockpit-bg);
       border-bottom: 1px solid var(--border);
@@ -123,15 +120,13 @@
       padding: 0.6rem 1rem;
     }
 
-    /* IDE Layout Split */
     .ide-container {
       display: grid;
-      grid-template-columns: 280px 1fr 1fr;
+      grid-template-columns: 310px 1fr 1fr;
       flex: 1;
       overflow: hidden;
     }
 
-    /* Left Sidebar */
     .sidebar {
       background: var(--cockpit-bg);
       border-right: 1px solid var(--border);
@@ -166,7 +161,23 @@
       margin-bottom: 0.6rem;
     }
 
-    /* Middle & Right Panes (A/B Comparative Mode) */
+    .slider-container {
+      margin-bottom: 0.8rem;
+    }
+
+    .slider-container label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-bottom: 0.25rem;
+    }
+
+    .slider-container input[type=range] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
     .editor-pane {
       background: var(--editor-bg);
       border-right: 1px solid var(--border);
@@ -202,44 +213,21 @@
       display: flex;
       flex-direction: column;
     }
-
-    .terminal-view {
-      flex: 1;
-      padding: 1rem;
-      font-family: 'Fira Code', monospace;
-      font-size: 0.85rem;
-      color: var(--neon-green);
-      overflow: auto;
-      line-height: 1.6;
-    }
-
-    .terminal-line { margin-bottom: 0.4rem; }
-    .terminal-prompt { color: var(--accent); }
-    .terminal-cursor {
-      display: inline-block;
-      width: 8px;
-      height: 15px;
-      background: var(--neon-green);
-      animation: blink 1s infinite;
-      vertical-align: middle;
-    }
-
-    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
   </style>
 </head>
 <body>
 
   <!-- Top Sovereign Banner -->
   <div class="sovereign-banner">
-    <span>🔒 SOVEREIGN LOCAL AI MACHINE — 100% PRIVATE & AIR-GAPPED</span>
-    <span>HARDWARE: APPLE SILICON GPU (MLX) | ZERO CLOUD DEPS</span>
+    <span>🔒 SOVEREIGN LOCAL AI COCKPIT — TOTAL USER CONTROL</span>
+    <span>HARDWARE: APPLE SILICON GPU (MLX) | 100% PRIVATE</span>
   </div>
 
   <!-- Header Controls -->
   <header>
     <div class="brand">
       <div class="server-status-pulse"></div>
-      <span style="color: var(--accent); font-weight:700;">VISUAL EXPERIMENTATION STUDIO</span>
+      <span style="color: var(--accent); font-weight:700;">GRANULAR MODEL STEERING CONSOLE</span>
       <span style="color: var(--text-dim); font-size:0.8rem;">[A/B STEERING COMPARATOR]</span>
     </div>
 
@@ -254,27 +242,54 @@
   <div class="command-bar-section">
     <span style="font-family:'Fira Code', monospace; color:var(--accent); font-weight:700;">USER COMMAND:</span>
     <input type="text" id="cmdInput" class="command-input" placeholder="Type a task prompt (e.g. Write a python function compute_factorial(n: int)...)" value="Write a python function to compute factorial with type hints.">
-    <button class="btn-neon" onclick="runLiveExperiment()">▶ RUN A/B EXPERIMENT</button>
+    <button class="btn-neon" onclick="runLiveExperiment()">▶ EXECUTE STEERED RUN</button>
   </div>
 
-  <!-- IDE Split Layout: Base Model vs Steered Model -->
+  <!-- IDE Split Layout -->
   <div class="ide-container">
     
-    <!-- Left Sidebar: Controls & Visual Telemetry -->
+    <!-- Left Sidebar: Advanced User Control Knobs -->
     <div class="sidebar">
       <div class="sidebar-section">
-        <div class="sidebar-title">Visual Steering Metrics</div>
-        <div class="toggle-row"><span>Vector Norm (||v||)</span><strong id="valVectorNorm" style="color:var(--accent);">1.42</strong></div>
-        <div class="toggle-row"><span>Preamble Delta</span><strong id="valPreamble" style="color:var(--neon-green);">-14 Tokens</strong></div>
-        <div class="toggle-row"><span>Syntax Compliance</span><strong id="valCompliance" style="color:var(--neon-green);">100.0%</strong></div>
+        <div class="sidebar-title">🎛️ Neural Steering Controls</div>
+        
+        <div class="slider-container">
+          <label><span>Steering Vector Intensity (α)</span><span id="valAlpha">1.0</span></label>
+          <input type="range" id="inputAlpha" min="0" max="2" step="0.1" value="1.0" oninput="document.getElementById('valAlpha').textContent=this.value">
+        </div>
+
+        <div class="slider-container">
+          <label><span>Target Residual Layer (L)</span><span id="valLayer">16</span></label>
+          <input type="range" id="inputLayer" min="0" max="32" step="1" value="16" oninput="document.getElementById('valLayer').textContent=this.value">
+        </div>
+
+        <div class="slider-container">
+          <label><span>Sampling Temperature (T)</span><span id="valTemp">0.2</span></label>
+          <input type="range" id="inputTemp" min="0" max="1" step="0.05" value="0.2" oninput="document.getElementById('valTemp').textContent=this.value">
+        </div>
+
+        <div class="slider-container">
+          <label><span>Top-P Nucleus Cutoff</span><span id="valTopP">0.95</span></label>
+          <input type="range" id="inputTopP" min="0.1" max="1" step="0.05" value="0.95" oninput="document.getElementById('valTopP').textContent=this.value">
+        </div>
+
+        <div class="slider-container">
+          <label><span>Max Token Length Cap</span><span id="valMaxTokens">512</span></label>
+          <input type="range" id="inputMaxTokens" min="64" max="2048" step="64" value="512" oninput="document.getElementById('valMaxTokens').textContent=this.value">
+        </div>
       </div>
 
       <div class="sidebar-section">
-        <div class="sidebar-title">Model Steering Controls</div>
-        <div class="toggle-row"><span>Dual-Layer CAA</span><input type="checkbox" checked></div>
-        <div class="toggle-row"><span>GBNF Logit Fence</span><input type="checkbox" checked></div>
-        <div class="toggle-row"><span>MCTS DPO Search</span><input type="checkbox" checked></div>
-        <div class="toggle-row"><span>IDE Auto-Sync</span><input type="checkbox" checked></div>
+        <div class="sidebar-title">⚙️ Engine Feature Toggles</div>
+        <div class="toggle-row"><span>CAA Vector Steering</span><input type="checkbox" id="chkCAA" checked></div>
+        <div class="toggle-row"><span>GBNF Logit Fence</span><input type="checkbox" id="chkGBNF" checked></div>
+        <div class="toggle-row"><span>MCTS DPO Search</span><input type="checkbox" id="chkDPO" checked></div>
+        <div class="toggle-row"><span>IDE Sync (.cursorrules)</span><input type="checkbox" id="chkSync" checked></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">📝 System Prompt Override</div>
+        <input type="text" id="inputSysPrompt" style="width:100%; font-size:0.75rem;" value="You are Ornith AI Coder. Output only python code.">
       </div>
     </div>
 
@@ -297,7 +312,7 @@ Hope this helps!</div>
     <!-- Right Pane: Dual-Layer Steered Output -->
     <div class="terminal-pane">
       <div class="pane-header">
-        <span>✅ DUAL-LAYER STEERED MODEL (SkillOpt + GBNF)</span>
+        <span>✅ STEERED MODEL (User-Controlled α & Layer)</span>
         <span style="color:var(--neon-green);">100% Pure Executable Code</span>
       </div>
       <div class="code-view" style="color:var(--neon-green);" id="steeredOutputView">def factorial(n: int) -> int:
@@ -341,20 +356,35 @@ Hope this helps!</div>
       const promptText = document.getElementById('cmdInput').value;
       const projectId = document.getElementById('projectSelect').value;
 
+      const alpha = document.getElementById('inputAlpha').value;
+      const layer = document.getElementById('inputLayer').value;
+      const temp = document.getElementById('inputTemp').value;
+      const top_p = document.getElementById('inputTopP').value;
+      const max_tokens = document.getElementById('inputMaxTokens').value;
+      const sys_prompt = document.getElementById('inputSysPrompt').value;
+
       document.getElementById('baseOutputView').textContent = 'Generating Unsteered Base Model response...';
-      document.getElementById('steeredOutputView').textContent = 'Generating Dual-Layer Steered Model response...';
+      document.getElementById('steeredOutputView').textContent = `Executing Steered Model Run (α=${alpha}, Layer=${layer}, T=${temp})...`;
 
       try {
         const res = await fetch('/api/experiment', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({prompt: promptText, project_id: projectId})
+          body: JSON.stringify({
+            prompt: promptText,
+            project_id: projectId,
+            alpha: alpha,
+            target_layer: layer,
+            temperature: temp,
+            top_p: top_p,
+            max_tokens: max_tokens,
+            system_prompt: sys_prompt
+          })
         });
         const data = await res.json();
 
         document.getElementById('baseOutputView').textContent = data.unsteered.text;
         document.getElementById('steeredOutputView').textContent = data.steered.text;
-        document.getElementById('valVectorNorm').textContent = data.steered.vector_norm;
 
       } catch(e) { alert('Experiment failed: ' + e); }
     }

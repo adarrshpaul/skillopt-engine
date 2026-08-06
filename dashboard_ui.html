@@ -201,6 +201,9 @@
         .log-status-ORCHESTRATING { color: var(--accent-color); }
 
     </style>
+    <!-- Ace Editor CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/ace.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/ext-language_tools.js"></script>
 </head>
 <body>
 
@@ -231,9 +234,12 @@
         </div>
 
         <!-- Editor Tab -->
-        <div id="tab-editor" class="tab-content active">
-            <p style="color: var(--text-secondary);">Select a file from the explorer to view its contents, or run the orchestrator to build a new project.</p>
-            <div class="code-box" id="mainEditor" style="height: 100%; min-height: 300px; display: none;"></div>
+        <div id="tab-editor" class="tab-content active" style="display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div id="editorFileTitle" style="color: var(--accent-color); font-weight: bold;">No file selected</div>
+                <button onclick="saveFile()" id="saveBtn" style="display: none; background-color: var(--success-color); color: #1e1e1e;">💾 Save File</button>
+            </div>
+            <div id="mainEditor" style="flex: 1; min-height: 400px; border: 1px solid var(--border-color); border-radius: 4px;"></div>
         </div>
 
         <!-- DPO Flywheel Tab -->
@@ -254,12 +260,25 @@
 
     <script>
         const API_BASE = "http://localhost:8900/api";
+        let editorInstance = null;
+        let currentFilepath = null;
 
         // Tab Switching
-        function switchTab(tabId) {
+        function switchTab(tabId, event) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            event.target.classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            } else {
+                // Find tab manually
+                const tabs = document.querySelectorAll('.tab');
+                for (let i = 0; i < tabs.length; i++) {
+                    if (tabs[i].textContent.toLowerCase().includes(tabId)) {
+                        tabs[i].classList.add('active');
+                        break;
+                    }
+                }
+            }
             document.getElementById('tab-' + tabId).classList.add('active');
             if (tabId === 'dpo') fetchDPOLogs();
         }
@@ -283,7 +302,7 @@
             }
         }
 
-        // Open and display file content
+        // Open and display file content with Ace
         async function openFile(filepath) {
             try {
                 const res = await fetch(`${API_BASE}/file?path=${encodeURIComponent(filepath)}`);
@@ -294,18 +313,67 @@
                 }
                 
                 // Switch to editor tab
-                switchTab('editor');
+                switchTab('editor', null);
                 
-                const editor = document.getElementById("mainEditor");
-                editor.style.display = "block";
+                document.getElementById("editorFileTitle").textContent = filepath;
+                document.getElementById("saveBtn").style.display = "block";
+                currentFilepath = filepath;
                 
-                // Very basic syntax highlighting approach using <pre><code>
-                editor.innerHTML = `<div style="margin-bottom: 10px; color: var(--accent-color); font-weight: bold;">${filepath}</div><pre style="margin: 0; white-space: pre-wrap; font-family: monospace;"><code></code></pre>`;
-                editor.querySelector("code").textContent = data.content; // Use textContent to safely render code
+                // Initialize Ace Editor if not already
+                if (!editorInstance) {
+                    editorInstance = ace.edit("mainEditor");
+                    editorInstance.setTheme("ace/theme/tomorrow_night_eighties");
+                    editorInstance.session.setMode("ace/mode/python");
+                    editorInstance.setOptions({
+                        fontSize: "13px",
+                        showPrintMargin: false
+                    });
+                }
+                
+                // Set language based on extension
+                if (filepath.endsWith(".md")) {
+                    editorInstance.session.setMode("ace/mode/markdown");
+                } else if (filepath.endsWith(".json")) {
+                    editorInstance.session.setMode("ace/mode/json");
+                } else if (filepath.endsWith(".html")) {
+                    editorInstance.session.setMode("ace/mode/html");
+                } else {
+                    editorInstance.session.setMode("ace/mode/python");
+                }
+                
+                editorInstance.setValue(data.content, -1);
                 
             } catch (e) {
                 console.error("Failed to open file:", e);
                 alert("Failed to load file.");
+            }
+        }
+
+        // Save File Content
+        async function saveFile() {
+            if (!currentFilepath || !editorInstance) return;
+            const content = editorInstance.getValue();
+            const btn = document.getElementById("saveBtn");
+            btn.textContent = "Saving...";
+            
+            try {
+                const res = await fetch(`${API_BASE}/file`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: currentFilepath, content: content })
+                });
+                const data = await res.json();
+                if (data.status === "success") {
+                    btn.textContent = "✅ Saved!";
+                    setTimeout(() => btn.textContent = "💾 Save File", 2000);
+                } else {
+                    alert("Error saving: " + data.error);
+                    btn.textContent = "💾 Save File";
+                }
+            } catch(e) {
+                console.error(e);
+                alert("Failed to save.");
+                btn.textContent = "💾 Save File";
             }
         }
 

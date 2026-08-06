@@ -286,7 +286,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             goal = data.get("goal", "Create a hello world python script")
             project_id = data.get("project_id", "proj-default")
             
-            # Log the orchestration start
+            # Log the initial orchestration event
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute(
@@ -296,14 +296,52 @@ class DashboardHandler(BaseHTTPRequestHandler):
             conn.commit()
             conn.close()
 
-            # Launch orchestrator in background
-            orchestrator_path = "/Users/adarrsh/workspace/orchestrator.py"
-            subprocess.Popen(
-                [sys.executable, orchestrator_path, goal],
-                cwd="/Users/adarrsh/workspace/projects",
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
+            # Launch orchestrator and log stdout in a background thread
+            def run_and_stream(goal_text, proj_id):
+                orchestrator_path = "/Users/adarrsh/workspace/orchestrator.py"
+                proc = subprocess.Popen(
+                    [sys.executable, orchestrator_path, goal_text],
+                    cwd="/Users/adarrsh/workspace/projects",
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1
+                )
+                for line in iter(proc.stdout.readline, ''):
+                    line_clean = line.strip()
+                    if not line_clean:
+                        continue
+                    
+                    status = "INFO"
+                    if "🧠" in line_clean or "Planner" in line_clean:
+                        status = "PLANNING"
+                    elif "💻" in line_clean or "Coder" in line_clean:
+                        status = "CODING"
+                    elif "✅" in line_clean or "Passed" in line_clean:
+                        status = "PASSED"
+                    elif "❌" in line_clean or "Failed" in line_clean:
+                        status = "FAILED"
+                    elif "✨" in line_clean or "Complete" in line_clean:
+                        status = "SUCCESS"
+
+                    try:
+                        conn_log = sqlite3.connect(DB_PATH)
+                        cursor_log = conn_log.cursor()
+                        cursor_log.execute(
+                            "INSERT INTO interactions (project_id, task_prompt, status, latency_ms, code_output, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                            (proj_id, line_clean, status, 0.0, line_clean, datetime.datetime.now().isoformat())
+                        )
+                        conn_log.commit()
+                        conn_log.close()
+                    except Exception as ex:
+                        print(f"Log stream error: {ex}")
+                
+                proc.stdout.close()
+                proc.wait()
+
+            thread = threading.Thread(target=run_and_stream, args=(goal, project_id))
+            thread.daemon = True
+            thread.start()
             
             self._set_headers(202)
             self.wfile.write(json.dumps({"status": "orchestrating", "goal": goal}).encode("utf-8"))

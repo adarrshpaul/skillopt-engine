@@ -1,0 +1,21 @@
+{
+  "workspace_health": {
+    "total_files": 37,
+    "passed_files": 37,
+    "compilation_pass_rate": 100.0,
+    "benchmark_time_seconds": 0.6063
+  },
+  "mcp_scaffold_test": {
+    "status": "PASSED",
+    "latency_seconds": 0.0835
+  },
+  "dpo_dataset_yield": {
+    "verified_pairs": 2,
+    "dataset_path": "/Users/adarrsh/workspace/dpo_graph_dataset.jsonl"
+  },
+  "inference_server": {
+    "status": "ONLINE",
+    "ping_latency_ms": 53.42,
+    "target_model": "AtomicChat/Ornith-9B-MLX-6bit"
+  }
+}

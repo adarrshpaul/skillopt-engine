@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.env
+auto-dev-env/
+ml-env*/
+dpo_adapters/
+models/
+fused_model/
+*.safetensors
+*.bin
+*.pt
+*.tar.gz
+.DS_Store
+projects.db

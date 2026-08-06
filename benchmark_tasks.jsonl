@@ -1,0 +1,20 @@
+{"task_id": "ORCH-1", "type": "orchestration", "prompt": "Deploy a Node.js express backend and a React frontend on ports 8080 and 3000.", "expected_format": "bash"}
+{"task_id": "ORCH-2", "type": "orchestration", "prompt": "Create a bash script to clone a GitHub repository, build the Docker image, and run it.", "expected_format": "bash"}
+{"task_id": "ORCH-3", "type": "orchestration", "prompt": "Write a script to back up a PostgreSQL database and upload it to an S3 bucket.", "expected_format": "bash"}
+{"task_id": "ORCH-4", "type": "orchestration", "prompt": "Set up an Nginx reverse proxy routing traffic to two different local ports.", "expected_format": "bash"}
+{"task_id": "ORCH-5", "type": "orchestration", "prompt": "Create a script that monitors CPU usage and sends a Slack alert if it exceeds 90%.", "expected_format": "bash"}
+{"task_id": "ORCH-6", "type": "orchestration", "prompt": "Deploy a Python FastAPI app using Gunicorn and Uvicorn workers.", "expected_format": "bash"}
+{"task_id": "ORCH-7", "type": "orchestration", "prompt": "Automate the installation and configuration of Redis on an Ubuntu server.", "expected_format": "bash"}
+{"task_id": "ORCH-8", "type": "orchestration", "prompt": "Write a CI/CD bash script that runs pytest and builds a wheel file if tests pass.", "expected_format": "bash"}
+{"task_id": "ORCH-9", "type": "orchestration", "prompt": "Create a script to parse Apache logs and ban IPs with too many 404 requests using iptables.", "expected_format": "bash"}
+{"task_id": "ORCH-10", "type": "orchestration", "prompt": "Set up a local Kubernetes cluster using Minikube and deploy a simple pod.", "expected_format": "bash"}
+{"task_id": "CODE-1", "type": "coding", "prompt": "Write a Python function to perform a binary search on a sorted array.", "expected_format": "code"}
+{"task_id": "CODE-2", "type": "coding", "prompt": "Create a React component that fetches user data from an API and displays it in a table.", "expected_format": "code"}
+{"task_id": "CODE-3", "type": "coding", "prompt": "Write a JavaScript function to debounce rapid consecutive button clicks.", "expected_format": "code"}
+{"task_id": "CODE-4", "type": "coding", "prompt": "Implement a thread-safe Singleton design pattern in Python.", "expected_format": "code"}
+{"task_id": "CODE-5", "type": "coding", "prompt": "Create a Node.js Express route that accepts file uploads and saves them to disk.", "expected_format": "code"}
+{"task_id": "CODE-6", "type": "coding", "prompt": "Write a Python script that parses a CSV file and converts it into a SQLite database.", "expected_format": "code"}
+{"task_id": "CODE-7", "type": "coding", "prompt": "Implement a breadth-first search algorithm for a graph represented as an adjacency list.", "expected_format": "code"}
+{"task_id": "CODE-8", "type": "coding", "prompt": "Create a React Hook that tracks the mouse position on the screen.", "expected_format": "code"}
+{"task_id": "CODE-9", "type": "coding", "prompt": "Write a Python function to calculate the Levenshtein distance between two strings.", "expected_format": "code"}
+{"task_id": "CODE-10", "type": "coding", "prompt": "Implement a rate limiter in Node.js using Redis.", "expected_format": "code"}

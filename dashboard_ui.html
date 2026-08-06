@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillOpt Engine — Sovereign AI & Interactive Steering Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #070a11;
+      --cockpit-bg: #0f172a;
+      --editor-bg: #1e293b;
+      --terminal-bg: #020617;
+      --border: #334155;
+      --accent: #38bdf8;
+      --neon-green: #10b981;
+      --neon-gold: #f59e0b;
+      --neon-pink: #f43f5e;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top Sovereign Banner */
+    .sovereign-banner {
+      background: linear-gradient(90deg, #0284c7, #0d9488);
+      color: white;
+      padding: 0.35rem 1.5rem;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Header Controls */
+    header {
+      background: var(--cockpit-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-family: 'Fira Code', monospace;
+    }
+
+    .server-status-pulse {
+      width: 10px;
+      height: 10px;
+      background-color: var(--neon-green);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--neon-green);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.4; box-shadow: 0 0 5px var(--neon-green); }
+      50% { opacity: 1; box-shadow: 0 0 15px var(--neon-green); }
+      100% { opacity: 0.4; box-shadow: 0 0 5px var(--neon-green); }
+    }
+
+    .controls-bar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    select, button, input {
+      font-family: 'Fira Code', monospace;
+      background: var(--editor-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      outline: none;
+    }
+
+    button.btn-neon {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+    }
+
+    /* Interactive Command Bar */
+    .command-bar-section {
+      background: var(--cockpit-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .command-input {
+      flex: 1;
+      background: var(--terminal-bg);
+      border: 1px solid var(--accent);
+      color: var(--neon-green);
+      font-size: 0.9rem;
+      padding: 0.6rem 1rem;
+    }
+
+    /* IDE Layout Split */
+    .ide-container {
+      display: grid;
+      grid-template-columns: 280px 1fr 1fr;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Left Sidebar */
+    .sidebar {
+      background: var(--cockpit-bg);
+      border-right: 1px solid var(--border);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      background: var(--editor-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+
+    .sidebar-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 0.75rem;
+    }
+
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      margin-bottom: 0.6rem;
+    }
+
+    /* Middle & Right Panes (A/B Comparative Mode) */
+    .editor-pane {
+      background: var(--editor-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .pane-header {
+      background: var(--cockpit-bg);
+      padding: 0.5rem 1rem;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.8rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--text-dim);
+    }
+
+    .code-view {
+      flex: 1;
+      padding: 1rem;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.85rem;
+      color: #e5e7eb;
+      overflow: auto;
+      white-space: pre;
+      line-height: 1.5;
+    }
+
+    .terminal-pane {
+      background: var(--terminal-bg);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .terminal-view {
+      flex: 1;
+      padding: 1rem;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.85rem;
+      color: var(--neon-green);
+      overflow: auto;
+      line-height: 1.6;
+    }
+
+    .terminal-line { margin-bottom: 0.4rem; }
+    .terminal-prompt { color: var(--accent); }
+    .terminal-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 15px;
+      background: var(--neon-green);
+      animation: blink 1s infinite;
+      vertical-align: middle;
+    }
+
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  </style>
+</head>
+<body>
+
+  <!-- Top Sovereign Banner -->
+  <div class="sovereign-banner">
+    <span>🔒 SOVEREIGN LOCAL AI MACHINE — 100% PRIVATE & AIR-GAPPED</span>
+    <span>HARDWARE: APPLE SILICON GPU (MLX) | ZERO CLOUD DEPS</span>
+  </div>
+
+  <!-- Header Controls -->
+  <header>
+    <div class="brand">
+      <div class="server-status-pulse"></div>
+      <span style="color: var(--accent); font-weight:700;">VISUAL EXPERIMENTATION STUDIO</span>
+      <span style="color: var(--text-dim); font-size:0.8rem;">[A/B STEERING COMPARATOR]</span>
+    </div>
+
+    <div class="controls-bar">
+      <span style="font-size:0.85rem; color:var(--text-dim);">Project:</span>
+      <select id="projectSelect" onchange="loadProjectData()"></select>
+      <button class="btn-neon" onclick="promptNewProject()">+ New Project</button>
+    </div>
+  </header>
+
+  <!-- Interactive Command Entry Bar -->
+  <div class="command-bar-section">
+    <span style="font-family:'Fira Code', monospace; color:var(--accent); font-weight:700;">USER COMMAND:</span>
+    <input type="text" id="cmdInput" class="command-input" placeholder="Type a task prompt (e.g. Write a python function compute_factorial(n: int)...)" value="Write a python function to compute factorial with type hints.">
+    <button class="btn-neon" onclick="runLiveExperiment()">▶ RUN A/B EXPERIMENT</button>
+  </div>
+
+  <!-- IDE Split Layout: Base Model vs Steered Model -->
+  <div class="ide-container">
+    
+    <!-- Left Sidebar: Controls & Visual Telemetry -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-title">Visual Steering Metrics</div>
+        <div class="toggle-row"><span>Vector Norm (||v||)</span><strong id="valVectorNorm" style="color:var(--accent);">1.42</strong></div>
+        <div class="toggle-row"><span>Preamble Delta</span><strong id="valPreamble" style="color:var(--neon-green);">-14 Tokens</strong></div>
+        <div class="toggle-row"><span>Syntax Compliance</span><strong id="valCompliance" style="color:var(--neon-green);">100.0%</strong></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">Model Steering Controls</div>
+        <div class="toggle-row"><span>Dual-Layer CAA</span><input type="checkbox" checked></div>
+        <div class="toggle-row"><span>GBNF Logit Fence</span><input type="checkbox" checked></div>
+        <div class="toggle-row"><span>MCTS DPO Search</span><input type="checkbox" checked></div>
+        <div class="toggle-row"><span>IDE Auto-Sync</span><input type="checkbox" checked></div>
+      </div>
+    </div>
+
+    <!-- Middle Pane: Base Unsteered Output -->
+    <div class="editor-pane">
+      <div class="pane-header">
+        <span>❌ BASE MODEL (Unsteered / Verbose)</span>
+        <span style="color:var(--neon-pink);">Contains Filler Preambles</span>
+      </div>
+      <div class="code-view" id="baseOutputView">Here is your code:
+
+```python
+def factorial(n: int) -> int:
+    if n <= 1: return 1
+    return n * factorial(n - 1)
+```
+Hope this helps!</div>
+    </div>
+
+    <!-- Right Pane: Dual-Layer Steered Output -->
+    <div class="terminal-pane">
+      <div class="pane-header">
+        <span>✅ DUAL-LAYER STEERED MODEL (SkillOpt + GBNF)</span>
+        <span style="color:var(--neon-green);">100% Pure Executable Code</span>
+      </div>
+      <div class="code-view" style="color:var(--neon-green);" id="steeredOutputView">def factorial(n: int) -> int:
+    """Computes factorial of n."""
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)</div>
+    </div>
+
+  </div>
+
+  <script>
+    async function loadProjects() {
+      try {
+        const res = await fetch('/api/projects');
+        const projects = await res.json();
+        const select = document.getElementById('projectSelect');
+        select.innerHTML = '';
+        projects.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.project_id;
+          opt.textContent = `${p.name} (${p.project_id})`;
+          select.appendChild(opt);
+        });
+        if (projects.length > 0) loadProjectData();
+      } catch(e) { console.error('Failed to load projects:', e); }
+    }
+
+    async function loadProjectData() {
+      const projectId = document.getElementById('projectSelect').value;
+      try {
+        const res = await fetch(`/api/interactions?project_id=${projectId}`);
+        const logs = await res.json();
+        if (logs.length > 0 && logs[0].code_output) {
+          document.getElementById('steeredOutputView').textContent = logs[0].code_output;
+        }
+      } catch(e) { console.error('Failed to load logs:', e); }
+    }
+
+    async function runLiveExperiment() {
+      const promptText = document.getElementById('cmdInput').value;
+      const projectId = document.getElementById('projectSelect').value;
+
+      document.getElementById('baseOutputView').textContent = 'Generating Unsteered Base Model response...';
+      document.getElementById('steeredOutputView').textContent = 'Generating Dual-Layer Steered Model response...';
+
+      try {
+        const res = await fetch('/api/experiment', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({prompt: promptText, project_id: projectId})
+        });
+        const data = await res.json();
+
+        document.getElementById('baseOutputView').textContent = data.unsteered.text;
+        document.getElementById('steeredOutputView').textContent = data.steered.text;
+        document.getElementById('valVectorNorm').textContent = data.steered.vector_norm;
+
+      } catch(e) { alert('Experiment failed: ' + e); }
+    }
+
+    async function promptNewProject() {
+      const name = prompt("Enter new project name:");
+      if (!name) return;
+      try {
+        await fetch('/api/projects', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({name: name})
+        });
+        loadProjects();
+      } catch(e) { alert('Failed to create project: ' + e); }
+    }
+
+    loadProjects();
+  </script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+{
+  "models": [
+    {
+      "title": "Ollama (Local)",
+      "provider": "ollama",
+      "model": "ornith:9b"
+    },
+    {
+      "title": "Claude Sonnet (Anthropic)",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "apiKey": "$ANTHROPIC_API_KEY"
+    },
+    {
+      "title": "GPT-4o (OpenAI)",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "apiKey": "$OPENAI_API_KEY"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Starcoder2 (local)",
+    "provider": "ollama",
+    "model": "starcoder2:3b"
+  },
+  "mcpServers": {
+    "siemens-ix": {
+      "url": "http://localhost:7811/sse",
+      "type": "sse"
+    }
+  },
+  "contextProviders": [
+    { "name": "code" },
+    { "name": "docs" },
+    { "name": "diff" },
+    { "name": "terminal" },
+    { "name": "problems" },
+    { "name": "folder" },
+    { "name": "codebase" }
+  ],
+  "slashCommands": [
+    { "name": "edit",   "description": "Edit highlighted code" },
+    { "name": "comment","description": "Write comments for code" },
+    { "name": "share",  "description": "Export conversation" },
+    { "name": "cmd",    "description": "Generate a shell command" }
+  ],
+  "customCommands": [
+    {
+      "name": "task",
+      "prompt": "Read /Users/adarrsh/workspace/.tasks/queue.md and /Users/adarrsh/workspace/.tasks/in-progress.md. Pick the highest priority unclaimed task, claim it (write your name), then work on it. Write results to /Users/adarrsh/workspace/.tasks/done/.",
+      "description": "Pick up the next task from the shared queue"
+    }
+  ]
+}

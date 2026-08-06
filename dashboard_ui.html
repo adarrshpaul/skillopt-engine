@@ -294,8 +294,8 @@
                     const div = document.createElement("div");
                     div.className = "log-entry";
                     const time = new Date(log.timestamp).toLocaleTimeString();
-                    const statusClass = \`log-status-\${log.status}\`;
-                    div.innerHTML = \`<span class="log-time">[\${time}]</span> <span class="\${statusClass}">[\${log.status}]</span> \${log.task_prompt}\`;
+                    const statusClass = `log-status-${log.status}`;
+                    div.innerHTML = `<span class="log-time">[${time}]</span> <span class="${statusClass}">[${log.status}]</span> ${log.task_prompt}`;
                     term.appendChild(div);
                 });
                 term.scrollTop = term.scrollHeight;
@@ -320,20 +320,20 @@
                 data.dpo_logs.reverse().forEach(log => {
                     const card = document.createElement("div");
                     card.className = "dpo-card";
-                    card.innerHTML = \`
-                        <div class="dpo-header">Task: \${log.prompt}</div>
-                        <div class="error-text">❌ Failed Verification: \${log.error || 'Unknown error'}</div>
+                    card.innerHTML = `
+                        <div class="dpo-header">Task: ${log.prompt}</div>
+                        <div class="error-text">❌ Failed Verification: ${log.error || 'Unknown error'}</div>
                         <div class="dpo-grid">
                             <div>
                                 <div style="color:var(--error-color); margin-bottom:5px;">Rejected Code (Failed)</div>
-                                <div class="code-box">\${log.rejected.substring(0, 300)}...</div>
+                                <div class="code-box">${log.rejected.substring(0, 300)}...</div>
                             </div>
                             <div>
                                 <div style="color:var(--success-color); margin-bottom:5px;">Chosen Code (Self-Corrected)</div>
-                                <div class="code-box">\${log.chosen ? log.chosen.substring(0, 300) + '...' : 'No recovery generated.'}</div>
+                                <div class="code-box">${log.chosen ? log.chosen.substring(0, 300) + '...' : 'No recovery generated.'}</div>
                             </div>
                         </div>
-                    \`;
+                    `;
                     container.appendChild(card);
                 });
             } catch (e) {
@@ -349,7 +349,7 @@
 
             input.value = "";
             const term = document.getElementById("terminalOutput");
-            term.innerHTML += \`<div class="log-entry"><span class="log-time">[\${new Date().toLocaleTimeString()}]</span> <span style="color:var(--accent-color)">[ORCHESTRATING]</span> Launching Gemma-4 + Ornith pipeline for: "\${goal}"...</div>\`;
+            term.innerHTML += `<div class="log-entry"><span class="log-time">[${new Date().toLocaleTimeString()}]</span> <span style="color:var(--accent-color)">[ORCHESTRATING]</span> Launching Gemma-4 + Ornith pipeline for: "${goal}"...</div>`;
             term.scrollTop = term.scrollHeight;
 
             try {

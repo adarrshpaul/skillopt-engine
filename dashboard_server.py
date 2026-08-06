@@ -286,22 +286,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/orchestrate":
             goal = data.get("goal", "Create a hello world python script")
             project_id = data.get("project_id", "proj-default")
+            vector = data.get("vector")
+            alpha = str(data.get("alpha", 1.0))
+            layer = str(data.get("layer", 16))
             
             # Log the initial orchestration event
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO interactions (project_id, task_prompt, status, latency_ms, code_output, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                (project_id, f"ORCHESTRATE: {goal}", "ORCHESTRATING", 0.0, "Orchestrator launched in background...", datetime.datetime.now().isoformat())
+                (project_id, f"ORCHESTRATE: {goal} [Steering: {vector or 'None'}, Alpha: {alpha}, Layer: L{layer}]", "ORCHESTRATING", 0.0, "Orchestrator launched in background...", datetime.datetime.now().isoformat())
             )
             conn.commit()
             conn.close()
 
             # Launch orchestrator and log stdout in a background thread
-            def run_and_stream(goal_text, proj_id):
+            def run_and_stream(goal_text, proj_id, vec, a_val, l_val):
                 orchestrator_path = "/Users/adarrsh/workspace/orchestrator.py"
+                cmd = [sys.executable, "-u", orchestrator_path, goal_text]
+                if vec:
+                    cmd.extend(["--vector", vec, "--alpha", str(a_val), "--layer", str(l_val)])
+                    
                 proc = subprocess.Popen(
-                    [sys.executable, "-u", orchestrator_path, goal_text],
+                    cmd,
                     cwd="/Users/adarrsh/workspace/projects",
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -340,7 +347,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 proc.stdout.close()
                 proc.wait()
 
-            thread = threading.Thread(target=run_and_stream, args=(goal, project_id))
+            thread = threading.Thread(target=run_and_stream, args=(goal, project_id, vector, alpha, layer))
             thread.daemon = True
             thread.start()
             

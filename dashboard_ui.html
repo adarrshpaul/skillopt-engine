@@ -528,17 +528,30 @@
             const goal = input.value.trim();
             if (!goal) return;
 
+            const vector = document.getElementById("vectorSelect").value;
+            const alpha = parseFloat(document.getElementById("alphaSlider").value);
+            const layer = parseInt(document.getElementById("layerSlider").value);
+
             input.value = "";
             const term = document.getElementById("terminalOutput");
-            term.innerHTML += `<div class="log-entry"><span class="log-time">[${new Date().toLocaleTimeString()}]</span> <span style="color:var(--accent-color)">[ORCHESTRATING]</span> Launching Gemma-4 + Ornith pipeline for: "${goal}"...</div>`;
+            term.innerHTML += `<div class="log-entry"><span class="log-time">[${new Date().toLocaleTimeString()}]</span> <span style="color:var(--accent-color)">[ORCHESTRATING]</span> Launching pipeline for "${goal}" [Steering: ${vector}, Alpha: ${alpha}, Layer: L${layer}]...</div>`;
             term.scrollTop = term.scrollHeight;
 
             try {
-                await fetch(`${API_BASE}/orchestrate`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ goal: goal, project_id: "proj-default" })
+                const res = await fetch(`${API_BASE}/orchestrate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        goal: goal, 
+                        project_id: 'proj-default',
+                        vector: vector,
+                        alpha: alpha,
+                        layer: layer
+                    })
                 });
+                if (!res.ok) {
+                    throw new Error("HTTP Error " + res.status);
+                }
                 
                 // Poll for updates every 3 seconds
                 setTimeout(() => {

@@ -31,7 +31,7 @@ Generate only valid, clean, self-contained Python code based on the task specifi
 Do not include conversational filler or markdown fences. Output strictly raw executable code.
 """
 
-def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name: str = "AtomicChat/Ornith-9B-MLX-6bit") -> str:
+def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name: str = "AtomicChat/Ornith-9B-MLX-6bit", vector: str = None, alpha: float = 1.0, layer: int = 16) -> str:
     url = f"{base_url}/chat/completions"
     payload = {
         "model": model_name,
@@ -39,7 +39,10 @@ def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        "temperature": 0.2
+        "temperature": 0.2,
+        "steering_vector": vector,
+        "alpha": alpha,
+        "target_layer": layer
     }
     req = Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
     try:
@@ -47,7 +50,7 @@ def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name:
             data = json.loads(resp.read().decode("utf-8"))
             return data["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        print(f"[Orchestrator Error] Failed to contact model server at {base_url}: {e}")
+        print(f"[Orchestrator Error] Failed to contact model server at {base_url}: {e}", flush=True)
         sys.exit(1)
 
 def log_dpo_pair(prompt: str, rejected: str, chosen: str, error: str):
@@ -61,15 +64,17 @@ def log_dpo_pair(prompt: str, rejected: str, chosen: str, error: str):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     print(f"  [DPO Flywheel] Logged failure/recovery pair to {DPO_LOG_PATH}")
 
-def run_task_graph(goal: str):
+def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int = 16):
     print(f"\n{'='*60}", flush=True)
     print(f"🚀 Multi-Agent Orchestrator Starting Goal:", flush=True)
     print(f"   \"{goal}\"", flush=True)
+    if vector:
+        print(f"   🎛️ Active Steering: Vector='{vector}', Alpha={alpha}, Layer=L{layer}", flush=True)
     print(f"{'='*60}\n", flush=True)
 
     # Step 1: Planner decomposes goal
     print("🧠 [1/2] Gemma-4 (Planner) generating task graph...", flush=True)
-    planner_response = query_model(PLANNER_URL, PLANNER_SYSTEM_PROMPT, f"User Goal: {goal}")
+    planner_response = query_model(PLANNER_URL, PLANNER_SYSTEM_PROMPT, f"User Goal: {goal}", vector=vector, alpha=alpha, layer=layer)
     
     # Clean up markdown if any leaked
     if planner_response.startswith("```"):
@@ -161,6 +166,9 @@ def run_task_graph(goal: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Multi-Agent Orchestrator")
     parser.add_argument("goal", type=str, nargs="?", default="Create a simple python module named greeting.py that has a greet(name) function and a test command.", help="High-level goal for the agents")
+    parser.add_argument("--vector", type=str, default=None, help="Steering vector name")
+    parser.add_argument("--alpha", type=float, default=1.0, help="Steering alpha scaling factor")
+    parser.add_argument("--layer", type=int, default=16, help="Target injection layer")
     args = parser.parse_args()
 
-    run_task_graph(args.goal)
+    run_task_graph(args.goal, vector=args.vector, alpha=args.alpha, layer=args.layer)

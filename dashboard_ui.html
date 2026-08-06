@@ -372,6 +372,10 @@
                 const data = await res.json();
                 const tree = document.getElementById("fileTree");
                 tree.innerHTML = "";
+                if (!data.files || data.files.length === 0) {
+                    tree.innerHTML = '<li class="file-item" style="color:var(--text-secondary);">Workspace empty</li>';
+                    return;
+                }
                 data.files.forEach(f => {
                     const li = document.createElement("li");
                     li.className = "file-item";
@@ -380,7 +384,9 @@
                     tree.appendChild(li);
                 });
             } catch (e) {
-                console.error(e);
+                console.error("fetchFiles error:", e);
+                const tree = document.getElementById("fileTree");
+                tree.innerHTML = `<li class="file-item" style="color:var(--error-color);">Server offline (${e.message})</li>`;
             }
         }
 

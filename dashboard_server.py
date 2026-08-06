@@ -121,18 +121,66 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         elif path == "/api/files":
-            workspace_dir = "/Users/adarrsh/workspace"
+            workspace_dir = "/Users/adarrsh/workspace/projects"
             files_list = []
-            for root, dirs, files in os.walk(workspace_dir):
-                if ".git" in root or ".tasks" in root or "__pycache__" in root:
-                    continue
-                for file in files:
-                    if file.endswith((".py", ".md", ".json", ".jsonl", ".txt")):
-                        rel_path = os.path.relpath(os.path.join(root, file), workspace_dir)
-                        files_list.append(rel_path)
+            try:
+                # Use git to list all tracked and untracked files while respecting .gitignore
+                res = subprocess.run(
+                    ["git", "ls-files", "-c", "-o", "--exclude-standard"],
+                    cwd=workspace_dir,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                for line in res.stdout.splitlines():
+                    if line.strip():
+                        files_list.append(line.strip())
+            except Exception as e:
+                # Fallback to os.walk if git fails
+                for root, dirs, files in os.walk(workspace_dir):
+                    if ".git" in root or ".tasks" in root or "__pycache__" in root:
+                        continue
+                    for file in files:
+                        if file.endswith((".py", ".md", ".json", ".jsonl", ".txt", ".html", ".sh")):
+                            rel_path = os.path.relpath(os.path.join(root, file), workspace_dir)
+                            files_list.append(rel_path)
             
             self._set_headers(200)
             self.wfile.write(json.dumps({"files": sorted(files_list)}).encode("utf-8"))
+            return
+
+        elif path == "/api/file" and self.command == "POST":
+            # We will use POST /api/file to save content
+            content_len = int(self.headers.get("Content-Length", 0))
+            if content_len == 0:
+                self._set_headers(400)
+                self.wfile.write(json.dumps({"error": "Empty body"}).encode("utf-8"))
+                return
+                
+            try:
+                body = json.loads(self.rfile.read(content_len).decode("utf-8"))
+                filepath = body.get("path")
+                content = body.get("content")
+                
+                if not filepath or content is None:
+                    self._set_headers(400)
+                    self.wfile.write(json.dumps({"error": "Path and content required"}).encode("utf-8"))
+                    return
+                    
+                full_path = os.path.join("/Users/adarrsh/workspace/projects", filepath)
+                if not os.path.abspath(full_path).startswith("/Users/adarrsh/workspace/projects"):
+                    self._set_headers(403)
+                    self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+                    return
+                    
+                with open(full_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                    
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"status": "success"}).encode("utf-8"))
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
             return
 
         elif path == "/api/file":
@@ -142,9 +190,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "Path required"}).encode("utf-8"))
                 return
                 
-            full_path = os.path.join("/Users/adarrsh/workspace", filepath)
+            full_path = os.path.join("/Users/adarrsh/workspace/projects", filepath)
             # Security check
-            if not os.path.abspath(full_path).startswith("/Users/adarrsh/workspace"):
+            if not os.path.abspath(full_path).startswith("/Users/adarrsh/workspace/projects"):
                 self._set_headers(403)
                 self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
                 return
@@ -223,7 +271,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
             # Launch orchestrator in background
             orchestrator_path = "/Users/adarrsh/workspace/orchestrator.py"
-            subprocess.Popen([sys.executable, orchestrator_path, goal], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(
+                [sys.executable, orchestrator_path, goal],
+                cwd="/Users/adarrsh/workspace/projects",
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
             
             self._set_headers(202)
             self.wfile.write(json.dumps({"status": "orchestrating", "goal": goal}).encode("utf-8"))

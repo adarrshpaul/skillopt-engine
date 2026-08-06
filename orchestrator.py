@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import subprocess
 import argparse
 from typing import List, Dict, Any
@@ -31,7 +32,7 @@ Generate only valid, clean, self-contained Python code based on the task specifi
 Do not include conversational filler or markdown fences. Output strictly raw executable code.
 """
 
-def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name: str = "AtomicChat/Ornith-9B-MLX-6bit", vector: str = None, alpha: float = 1.0, layer: int = 16) -> str:
+def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name: str = "AtomicChat/Ornith-9B-MLX-6bit", vector: str = None, alpha: float = 1.0, layer: int = 16, max_retries: int = 3) -> str:
     url = f"{base_url}/chat/completions"
     payload = {
         "model": model_name,
@@ -40,18 +41,24 @@ def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name:
             {"role": "user", "content": user_prompt}
         ],
         "temperature": 0.2,
+        "max_tokens": 1024,
         "steering_vector": vector,
         "alpha": alpha,
         "target_layer": layer
     }
-    req = Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-    try:
-        with urlopen(req) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print(f"[Orchestrator Error] Failed to contact model server at {base_url}: {e}", flush=True)
-        sys.exit(1)
+    
+    for attempt in range(1, max_retries + 1):
+        req = Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+        try:
+            with urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            print(f"⚠️ [Attempt {attempt}/{max_retries}] Model query timed out or failed ({e}). Retrying in 2s...", flush=True)
+            time.sleep(2)
+            
+    print(f"❌ [Orchestrator Error] All {max_retries} attempts to contact model server failed.", flush=True)
+    return "# Code generation timed out after multiple retries."
 
 def log_dpo_pair(prompt: str, rejected: str, chosen: str, error: str):
     entry = {

@@ -233,6 +233,7 @@
             <div class="orchestrate-box">
                 <input type="text" id="goalInput" placeholder="Describe a project goal (e.g. 'Build an e-commerce backend with models and checkout unit tests')">
                 <button onclick="launchOrchestrator()">Build Project</button>
+                <button onclick="cancelOrchestrator()" style="background-color: var(--error-color); min-width: auto; padding: 0 15px;">🛑 Cancel Task</button>
             </div>
             <!-- Neuronpedia Activation Steering Controls -->
             <div style="display: flex; gap: 15px; background: #252526; padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); align-items: center; font-size: 11px;">
@@ -560,6 +561,16 @@
                 }, 3000);
             } catch (e) {
                 alert("Error launching orchestrator: " + e);
+            }
+        // Cancel Orchestration
+        async function cancelOrchestrator() {
+            try {
+                await fetch(`${API_BASE}/cancel`, { method: 'POST' });
+                const term = document.getElementById("terminalOutput");
+                term.innerHTML += `<div class="log-entry"><span class="log-time">[${new Date().toLocaleTimeString()}]</span> <span style="color:var(--error-color)">[CANCELLED]</span> Task execution cancelled by user.</div>`;
+                term.scrollTop = term.scrollHeight;
+            } catch (e) {
+                console.error(e);
             }
         }
 

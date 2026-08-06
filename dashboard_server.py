@@ -351,8 +351,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
             thread.daemon = True
             thread.start()
             
-            self._set_headers(202)
-            self.wfile.write(json.dumps({"status": "orchestrating", "goal": goal}).encode("utf-8"))
+        elif path == "/api/cancel" and self.command == "POST":
+            try:
+                subprocess.run(["pkill", "-f", "orchestrator.py"], check=False)
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO interactions (project_id, task_prompt, status, latency_ms, code_output, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                    ("proj-default", "User cancelled running orchestration task.", "CANCELLED", 0.0, "Task cancelled by user.", datetime.datetime.now().isoformat())
+                )
+                conn.commit()
+                conn.close()
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"status": "cancelled"}).encode("utf-8"))
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
             return
 
         elif path == "/api/experiment":

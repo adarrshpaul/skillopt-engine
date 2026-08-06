@@ -84,6 +84,13 @@ def run_task_graph(goal: str):
 
     print(f"✅ Planned {len(task_graph)} subtasks.")
 
+    # Save task graph for IDE visualizer
+    try:
+        with open("task_graph.json", "w") as f:
+            json.dump({"goal": goal, "tasks": task_graph}, f, indent=2)
+    except Exception as e:
+        print(f"Warning: Could not save task_graph.json: {e}")
+
     # Step 2: Coder executes tasks
     for task in task_graph:
         step_id = task.get("step_id")

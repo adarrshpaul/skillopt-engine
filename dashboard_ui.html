@@ -218,18 +218,47 @@
     <!-- Main Workspace -->
     <div class="workspace">
         
-        <!-- Orchestrator Panel -->
-        <div class="top-panel">
-            <h2>Multi-Agent Orchestrator (Gemma-4 + Ornith-9B)</h2>
+        <!-- Orchestrator Panel & Activation Steering Controls -->
+        <div class="top-panel" style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Multi-Agent Orchestrator (Gemma-4 + Ornith-9B)</h2>
+                <div style="font-size: 11px; background: #252526; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                    ⚡ Steering Engine Active
+                </div>
+            </div>
             <div class="orchestrate-box">
-                <input type="text" id="goalInput" placeholder="Describe a project goal (e.g. 'Build a python module for formatting dates with type hints')">
+                <input type="text" id="goalInput" placeholder="Describe a project goal (e.g. 'Build an e-commerce backend with models and checkout unit tests')">
                 <button onclick="launchOrchestrator()">Build Project</button>
+            </div>
+            <!-- Neuronpedia Activation Steering Controls -->
+            <div style="display: flex; gap: 15px; background: #252526; padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); align-items: center; font-size: 11px;">
+                <div><strong>🎛️ Vector Steering:</strong></div>
+                <div>
+                    <label>Vector: </label>
+                    <select id="vectorSelect" style="background: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color); padding: 2px 5px; border-radius: 3px;">
+                        <option value="code_only">code_only</option>
+                        <option value="strict_json">strict_json</option>
+                        <option value="concise_response">concise_response</option>
+                        <option value="no_apologies">no_apologies</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Alpha (&alpha;): </label>
+                    <input type="range" id="alphaSlider" min="0.0" max="3.0" step="0.1" value="1.0" oninput="document.getElementById('alphaVal').textContent = this.value">
+                    <span id="alphaVal" style="color: var(--accent-color);">1.0</span>
+                </div>
+                <div>
+                    <label>Target Layer: </label>
+                    <input type="range" id="layerSlider" min="1" max="32" step="1" value="16" oninput="document.getElementById('layerVal').textContent = 'L' + this.value">
+                    <span id="layerVal" style="color: var(--accent-color);">L16</span>
+                </div>
             </div>
         </div>
 
         <!-- Editor Tabs -->
         <div class="tabs">
             <div class="tab active" onclick="switchTab('editor')">Output Editor</div>
+            <div class="tab" onclick="switchTab('plan')">Planner Task Graph & Thinking</div>
             <div class="tab" onclick="switchTab('dpo')">Self-Improving Flywheel (DPO)</div>
         </div>
 
@@ -240,6 +269,14 @@
                 <button onclick="saveFile()" id="saveBtn" style="display: none; background-color: var(--success-color); color: #1e1e1e;">💾 Save File</button>
             </div>
             <div id="mainEditor" style="flex: 1; min-height: 400px; border: 1px solid var(--border-color); border-radius: 4px;"></div>
+        </div>
+
+        <!-- Task Graph & Planner Thinking Tab -->
+        <div id="tab-plan" class="tab-content">
+            <p><strong>Gemma-4 Task Breakdown & Architectural Thinking</strong></p>
+            <div id="taskGraphContainer" style="display: flex; flex-direction: column; gap: 10px;">
+                <p style="color: var(--text-secondary);">No active task graph. Launch a project to view the planner breakdown.</p>
+            </div>
         </div>
 
         <!-- DPO Flywheel Tab -->
@@ -270,7 +307,6 @@
             if (event && event.target) {
                 event.target.classList.add('active');
             } else {
-                // Find tab manually
                 const tabs = document.querySelectorAll('.tab');
                 for (let i = 0; i < tabs.length; i++) {
                     if (tabs[i].textContent.toLowerCase().includes(tabId)) {
@@ -281,6 +317,47 @@
             }
             document.getElementById('tab-' + tabId).classList.add('active');
             if (tabId === 'dpo') fetchDPOLogs();
+            if (tabId === 'plan') fetchTaskGraph();
+        }
+
+        // Fetch Task Graph (Gemma-4 Architectural Breakdown)
+        async function fetchTaskGraph() {
+            try {
+                const res = await fetch(`${API_BASE}/task_graph`);
+                const data = await res.json();
+                const container = document.getElementById("taskGraphContainer");
+                container.innerHTML = "";
+                
+                if (data.error || !data.tasks) {
+                    container.innerHTML = `<p style="color:var(--text-secondary);">${data.error || 'No active task graph.'}</p>`;
+                    return;
+                }
+
+                const header = document.createElement("div");
+                header.style.marginBottom = "10px";
+                header.style.padding = "10px";
+                header.style.background = "#252526";
+                header.style.border = "1px solid var(--border-color)";
+                header.style.borderRadius = "4px";
+                header.innerHTML = `<strong>Project Goal:</strong> ${data.goal}`;
+                container.appendChild(header);
+
+                data.tasks.forEach(step => {
+                    const card = document.createElement("div");
+                    card.style.background = "#252526";
+                    card.style.border = "1px solid var(--border-color)";
+                    card.style.padding = "10px";
+                    card.style.borderRadius = "4px";
+                    card.innerHTML = `
+                        <div style="font-weight:bold; color:var(--accent-color); margin-bottom:5px;">Step ${step.step_id}: ${step.target_file}</div>
+                        <div style="margin-bottom:5px;">${step.description}</div>
+                        <div style="font-size:11px; color:var(--text-secondary); font-family:monospace;">Test Command: <code>${step.test_cmd || 'N/A'}</code></div>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (e) {
+                console.error("Failed to fetch task graph:", e);
+            }
         }
 
         // Fetch Files

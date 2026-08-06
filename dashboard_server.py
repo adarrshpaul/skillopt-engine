@@ -212,6 +212,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
             return
 
+        elif path == "/api/vectors":
+            vector_dir = "/Users/adarrsh/workspace/skills/vectors"
+            vectors = []
+            if os.path.exists(vector_dir):
+                for f in os.listdir(vector_dir):
+                    if f.endswith(".pt"):
+                        vectors.append(f[:-3])
+            self._set_headers(200)
+            self.wfile.write(json.dumps({"vectors": vectors}).encode("utf-8"))
+            return
+
+        elif path == "/api/task_graph":
+            task_graph_path = "/Users/adarrsh/workspace/projects/task_graph.json"
+            if not os.path.exists(task_graph_path):
+                self._set_headers(404)
+                self.wfile.write(json.dumps({"error": "No active task graph found."}).encode("utf-8"))
+                return
+            try:
+                with open(task_graph_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self._set_headers(200)
+                self.wfile.write(json.dumps(data).encode("utf-8"))
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+            return
+
         elif path == "/api/dpo_logs":
             dpo_path = "/Users/adarrsh/workspace/dpo_logs.jsonl"
             logs = []

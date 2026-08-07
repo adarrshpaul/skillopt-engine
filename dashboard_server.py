@@ -66,10 +66,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        path = parsed.path
+        path = parsed.path.rstrip("/")
         query = parse_qs(parsed.query)
 
-        if path == "/":
+        if path == "" or path == "/":
             if os.path.exists(UI_HTML_PATH):
                 self._set_headers(200, "text/html")
                 with open(UI_HTML_PATH, "rb") as f:
@@ -267,7 +267,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        path = parsed.path
+        path = parsed.path.rstrip("/")
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
         try:
@@ -357,7 +357,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             thread = threading.Thread(target=run_and_stream, args=(goal, project_id, vector, alpha, layer))
             thread.daemon = True
             thread.start()
-            
+
+            self._set_headers(202)
+            self.wfile.write(json.dumps({"status": "orchestrating", "goal": goal}).encode("utf-8"))
+            return
+
         elif path == "/api/cancel" and self.command == "POST":
             try:
                 subprocess.run(["pkill", "-f", "orchestrator.py"], check=False)

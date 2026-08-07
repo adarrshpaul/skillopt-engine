@@ -231,6 +231,25 @@ class WebCrawlTool(BaseTool):
         url = params["url"]
         return self.crawler.crawl_sync(url)
 
+class ChromaMemoryTool(BaseTool):
+    name = "chroma_search"
+    description = "Searches codebase and documentation vectors using ChromaDB semantic similarity."
+
+    def __init__(self):
+        from chroma_store import ChromaVectorMemory
+        self.chroma = ChromaVectorMemory()
+
+    def execute(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        query = params.get("query", "")
+        n_results = params.get("n_results", 3)
+        hits = self.chroma.semantic_search(query, n_results=n_results)
+        return {
+            "status": "SUCCESS",
+            "query": query,
+            "hits_count": len(hits),
+            "hits": hits
+        }
+
 # ============================================================================
 # 5. THE ASYNC GENERATOR AGENT LOOP ENGINE
 # ============================================================================
@@ -244,7 +263,8 @@ class AgentHarnessV2:
             "file_write": FileWriteTool(),
             "ast_validate": ASTValidatorTool(),
             "shell_exec": ShellExecTool(),
-            "web_crawl": WebCrawlTool()
+            "web_crawl": WebCrawlTool(),
+            "chroma_search": ChromaMemoryTool()
         }
 
     def set_model(self, model_key: str):

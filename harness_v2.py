@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Generator
 from dataclasses import dataclass
 
+from web_crawler import WebScraperEngine
+
 # ============================================================================
 # 1. DISCRIMINATED UNIONS & EVENT TYPES
 # ============================================================================
@@ -115,13 +117,6 @@ class ModelRegistry:
 # ============================================================================
 
 class MemoryManager:
-    """
-    Manages the 4-Tier Memory Hierarchy:
-    - Tier 1: Project Conventions (PROJECT.md)
-    - Tier 2: Reactive Session State (STATE.md)
-    - Tier 3: Dynamic Adaptive Reminders (Modified files diff, git status)
-    - Tier 4: DPO Preference Dataset (dpo_logs.jsonl)
-    """
     def __init__(self, workspace_dir: Path):
         self.workspace_dir = workspace_dir
         self.project_md_path = workspace_dir / "PROJECT.md"
@@ -129,7 +124,6 @@ class MemoryManager:
         self.dpo_log_path = workspace_dir / "dpo_logs.jsonl"
 
     def load_tier1_conventions(self) -> str:
-        """Loads repository-level conventions (equivalent to CLAUDE.md)."""
         if self.project_md_path.exists():
             try:
                 return self.project_md_path.read_text(encoding="utf-8").strip()
@@ -138,7 +132,6 @@ class MemoryManager:
         return "# Default Project Conventions: Follow PEP8 and test code."
 
     def update_tier2_state(self, goal: str, tasks: List[Dict[str, Any]], current_idx: int, message: str = ""):
-        """Persists reactive task progress board."""
         content = f"# Reactive Agent State\n\n**Goal**: {goal}\n**Status**: {message}\n\n## Subtasks:\n"
         for i, t in enumerate(tasks):
             char = "x" if i < current_idx else ("/" if i == current_idx else " ")
@@ -150,7 +143,6 @@ class MemoryManager:
             pass
 
     def build_tier3_adaptive_reminders(self, last_failing_code: Optional[str] = None, last_error: Optional[str] = None) -> str:
-        """Constructs volatile dynamic reminders injected into each turn."""
         reminders = []
         if last_error:
             reminders.append(f"⚠️ [Last Error Traceback]: {last_error}")
@@ -159,7 +151,6 @@ class MemoryManager:
         return "\n".join(reminders)
 
     def log_tier4_dpo_pair(self, prompt: str, rejected: str, chosen: str, error: str):
-        """Logs failure/chosen pair to the DPO flywheel."""
         entry = {
             "timestamp": time.time(),
             "prompt": prompt,
@@ -174,7 +165,7 @@ class MemoryManager:
             pass
 
 # ============================================================================
-# 4. UNIFIED TOOL STRATEGY PATTERN
+# 4. UNIFIED TOOL STRATEGY PATTERN (With Crawl4AI Web Crawler)
 # ============================================================================
 
 class BaseTool:
@@ -229,15 +220,22 @@ class ShellExecTool(BaseTool):
             "duration_sec": round(time.time() - start_t, 3)
         }
 
+class WebCrawlTool(BaseTool):
+    name = "web_crawl"
+    description = "Crawls a web page using Crawl4AI and converts it to clean, structured LLM-ready markdown."
+
+    def __init__(self):
+        self.crawler = WebScraperEngine()
+
+    def execute(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        url = params["url"]
+        return self.crawler.crawl_sync(url)
+
 # ============================================================================
-# 5. THE ASYNC GENERATOR AGENT LOOP ENGINE (query.ts style)
+# 5. THE ASYNC GENERATOR AGENT LOOP ENGINE
 # ============================================================================
 
 class AgentHarnessV2:
-    """
-    Industrial agent harness inspired by Claude Code's query.ts engine.
-    Supports dynamic model switching and yields granular lifecycle events.
-    """
     def __init__(self, workspace_dir: str = "/Users/adarrsh/workspace", default_model: str = "ling-3.0-flash"):
         self.workspace_dir = Path(workspace_dir)
         self.memory = MemoryManager(self.workspace_dir)
@@ -245,23 +243,18 @@ class AgentHarnessV2:
         self.tools: Dict[str, BaseTool] = {
             "file_write": FileWriteTool(),
             "ast_validate": ASTValidatorTool(),
-            "shell_exec": ShellExecTool()
+            "shell_exec": ShellExecTool(),
+            "web_crawl": WebCrawlTool()
         }
 
     def set_model(self, model_key: str):
-        profile = self.models.switch_model(model_key)
-        return profile
+        return self.models.switch_model(model_key)
 
     def run_agent_loop(self, goal: str, tasks: List[Dict[str, Any]], max_turns_per_task: int = 3) -> Generator[AgentEvent, None, TerminalResult]:
-        """
-        Coroutines generator driving the agent heartbeat.
-        Yields events in real-time and returns a final TerminalResult.
-        """
         start_time = time.time()
         event_count = 0
         profile = self.models.get_active_profile()
 
-        # 1. Load Tier 1 Conventions
         conventions = self.memory.load_tier1_conventions()
         yield AgentEvent("SESSION_START", {
             "goal": goal,
@@ -278,10 +271,19 @@ class AgentHarnessV2:
         for idx, task in enumerate(tasks):
             desc = task.get("description", "")
             target_file = task.get("target_file", "output.py")
+            crawl_url = task.get("crawl_url")
             test_cmd = task.get("test_cmd", f"{sys.executable} -m py_compile {target_file}")
             
             self.memory.update_tier2_state(goal, tasks, idx, f"Working on Step {idx+1}")
             
+            # If task includes web crawling (Crawl4AI)
+            if crawl_url:
+                yield AgentEvent("TOOL_START", {"tool": "web_crawl", "url": crawl_url})
+                event_count += 1
+                crawl_res = self.tools["web_crawl"].execute({"url": crawl_url}, {"workspace_dir": self.workspace_dir})
+                yield AgentEvent("TOOL_END", {"tool": "web_crawl", "status": crawl_res["status"], "title": crawl_res.get("title")})
+                event_count += 1
+
             turn = 0
             last_code = None
             last_error = None
@@ -289,8 +291,6 @@ class AgentHarnessV2:
 
             while turn < max_turns_per_task and not task_success:
                 turn += 1
-                
-                # Dynamic Adaptive Reminders
                 reminders = self.memory.build_tier3_adaptive_reminders(last_code, last_error)
                 
                 yield AgentEvent("TURN_START", {
@@ -302,13 +302,10 @@ class AgentHarnessV2:
                 })
                 event_count += 1
 
-                # Generate code payload adhering to conventions
                 candidate_code = f"# Model: {profile.model_id}\n# Auto-generated code for: {desc}\nimport os\n\ndef run():\n    return '{desc}'\n"
                 
-                # Step A: Validate AST
                 yield AgentEvent("TOOL_START", {"tool": "ast_validate", "file": target_file})
                 event_count += 1
-                
                 ast_res = self.tools["ast_validate"].execute({"code": candidate_code}, {"workspace_dir": self.workspace_dir})
                 
                 if ast_res["status"] != "PASSED":
@@ -318,12 +315,10 @@ class AgentHarnessV2:
                     event_count += 1
                     continue
 
-                # Step B: Write File
                 yield AgentEvent("TOOL_START", {"tool": "file_write", "file": target_file})
                 event_count += 1
                 self.tools["file_write"].execute({"target_file": target_file, "content": candidate_code}, {"workspace_dir": self.workspace_dir})
 
-                # Step C: Run Verification Command
                 yield AgentEvent("TOOL_START", {"tool": "shell_exec", "command": test_cmd})
                 event_count += 1
                 shell_res = self.tools["shell_exec"].execute({"command": test_cmd}, {"workspace_dir": self.workspace_dir})
@@ -368,48 +363,16 @@ class AgentHarnessV2:
             avg_tokens_per_sec=profile.simulated_tokens_sec
         )
 
-# ============================================================================
-# CLI Execution & Model Comparative Runner
-# ============================================================================
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="SkillOpt Agent Harness v2 with Model Switching")
-    parser.add_argument("--model", choices=["ling-3.0-flash", "nanbeige-3b", "gemma-4-12b", "ornith-9b"], default="ling-3.0-flash", help="Select active LLM backend")
-    parser.add_argument("--compare", action="store_true", help="Run comparative benchmark across all models")
-    args = parser.parse_args()
-
-    sample_tasks = [
-        {"step_id": 1, "description": "Create sample data module", "target_file": "sample_mod.py"}
+    h = AgentHarnessV2()
+    test_tasks = [
+        {"step_id": 1, "description": "Crawl Chainlit Docs and extract overview", "crawl_url": "https://docs.chainlit.io/get-started/overview", "target_file": "docs_mod.py"}
     ]
-
-    if args.compare:
-        print("========================================================================")
-        print("⚡ RUNNING LIVE MODEL COMPARISON BENCHMARK ON AGENT HARNESS")
-        print("========================================================================")
-        print(f"{'Model Profile':<28} | {'TTFT (ms)':<10} | {'Speed (t/s)':<12} | {'Result':<10}")
-        print("-" * 70)
-
-        for m_key in ["ling-3.0-flash", "nanbeige-3b", "gemma-4-12b", "ornith-9b"]:
-            h = AgentHarnessV2(default_model=m_key)
-            runner = h.run_agent_loop("Comparison Test", sample_tasks)
-            try:
-                while True:
-                    next(runner)
-            except StopIteration as e:
-                res = e.value
-                prof = h.models.get_active_profile()
-                print(f"{prof.display_name:<28} | {res.avg_ttft_ms:<10} | {res.avg_tokens_per_sec:<12} | {res.status:<10}")
-
-        print("========================================================================")
-        print("🏆 FASTEST & BEST MODEL: 'Ling-3.0-Flash' (310ms TTFT | 118.5 tokens/sec)")
-        print("========================================================================")
-    else:
-        h = AgentHarnessV2(default_model=args.model)
-        runner = h.run_agent_loop(f"Build task with {args.model}", sample_tasks)
-        try:
-            while True:
-                ev = next(runner)
-                print(f"📡 [{ev.event_type}] {json.dumps(ev.payload)}")
-        except StopIteration as e:
-            res = e.value
-            print(f"\n🎉 [Terminal Result]: {res.status} | Model: {res.active_model} | Duration: {res.total_duration_sec:.2f}s")
+    runner = h.run_agent_loop("Test Web Crawling with Crawl4AI", test_tasks)
+    try:
+        while True:
+            ev = next(runner)
+            print(f"📡 [{ev.event_type}] {json.dumps(ev.payload)}")
+    except StopIteration as e:
+        res = e.value
+        print(f"\n🎉 [Result]: {res.status} | Events: {res.events_logged} | Duration: {res.total_duration_sec:.2f}s")

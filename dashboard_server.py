@@ -7,7 +7,7 @@ import argparse
 import time
 import subprocess
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
@@ -498,7 +498,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def run_server(port: int = 8900):
     init_db()
     server_address = ("", port)
-    httpd = HTTPServer(server_address, DashboardHandler)
+    httpd = ThreadingHTTPServer(server_address, DashboardHandler)
     print(f"\n============================================================")
     print(f"📊 SkillOpt Web Control Center Server Running")
     print(f"   URL: http://localhost:{port}")

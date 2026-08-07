@@ -2,19 +2,13 @@ import re
 import time
 import json
 import urllib.request
+import asyncio
 from typing import Dict, Any, Optional
-
-try:
-    from crawl4ai import AsyncWebCrawler
-    CRAWL4AI_AVAILABLE = True
-except ImportError:
-    AsyncWebCrawler = None
-    CRAWL4AI_AVAILABLE = False
 
 class WebScraperEngine:
     """
     High-performance, LLM-ready web crawling and markdown extraction engine.
-    Uses Crawl4AI when available, with a resilient pure-python streaming fallback.
+    Uses Crawl4AI when available in an async loop, with a resilient pure-python streaming fallback.
     """
     def __init__(self):
         self.headers = {
@@ -24,28 +18,25 @@ class WebScraperEngine:
     async def crawl_async(self, url: str) -> Dict[str, Any]:
         """Asynchronously crawls a web page and returns clean Markdown."""
         start_time = time.time()
-        
-        if CRAWL4AI_AVAILABLE and AsyncWebCrawler:
-            try:
-                async with AsyncWebCrawler(verbose=False) as crawler:
-                    result = await crawler.arun(url=url)
-                    return {
-                        "url": url,
-                        "status": "SUCCESS",
-                        "engine": "crawl4ai",
-                        "markdown": result.markdown,
-                        "title": result.metadata.get("title", url),
-                        "duration_sec": round(time.time() - start_time, 2)
-                    }
-            except Exception as e:
-                pass # Fall through to resilient fallback
-
-        # Resilient Pure-Python Fallback (Fast & Dependency-Free)
-        return self._crawl_fallback(url, start_time)
+        try:
+            from crawl4ai import AsyncWebCrawler
+            async with AsyncWebCrawler(verbose=False) as crawler:
+                result = await crawler.arun(url=url)
+                return {
+                    "url": url,
+                    "status": "SUCCESS",
+                    "engine": "crawl4ai",
+                    "markdown": result.markdown,
+                    "title": result.metadata.get("title", url),
+                    "duration_sec": round(time.time() - start_time, 2)
+                }
+        except Exception:
+            return self._crawl_fallback(url, start_time)
 
     def crawl_sync(self, url: str) -> Dict[str, Any]:
-        """Synchronous crawler entry point for agent tools."""
+        """Synchronous crawler entry point for agent tools and HTTP servers."""
         start_time = time.time()
+        # Fast resilient fallback avoids thread event loop issues
         return self._crawl_fallback(url, start_time)
 
     def _crawl_fallback(self, url: str, start_time: float) -> Dict[str, Any]:
@@ -77,7 +68,6 @@ class WebScraperEngine:
             md = re.sub(r'[ \t]+', ' ', md)
             md = re.sub(r'\n\s*\n+', '\n\n', md).strip()
             
-            # Truncate if excessively large for LLM context compaction
             if len(md) > 15000:
                 md = md[:15000] + "\n\n... [Content truncated for LLM Context Compaction]"
 
@@ -105,7 +95,4 @@ if __name__ == "__main__":
     test_url = "https://docs.chainlit.io/get-started/overview"
     print(f"🕷️ Testing WebScraperEngine on: {test_url}")
     res = crawler.crawl_sync(test_url)
-    print(f"Status: {res['status']} | Duration: {res['duration_sec']}s | Engine: {res['engine']}")
-    print(f"Title: {res['title']}")
-    print("\n--- Preview Markdown (first 300 chars) ---")
-    print(res['markdown'][:300])
+    print(f"Status: {res['status']} | Duration: {res['duration_sec']}s | Title: {res['title']}")

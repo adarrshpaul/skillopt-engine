@@ -51,11 +51,10 @@
                 radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.08) 0px, transparent 50%);
         }
 
-        /* ==========================================================================
-           1. LEFT SIDEBAR
-           ========================================================================== */
+        /* 1. LEFT SIDEBAR */
         .sidebar {
             width: 280px;
+            min-width: 240px;
             background-color: var(--bg-sidebar);
             border-right: 1px solid var(--border);
             display: flex;
@@ -208,16 +207,15 @@
             color: var(--text-secondary);
         }
 
-        /* ==========================================================================
-           2. CENTER CHAT STREAM
-           ========================================================================== */
+        /* 2. CENTER CHAT STREAM */
         .chat-container {
             flex: 1;
             display: flex;
             flex-direction: column;
             position: relative;
             background: transparent;
-            min-width: 400px;
+            min-width: 320px;
+            height: 100vh;
         }
 
         .chat-header {
@@ -269,6 +267,77 @@
             scroll-behavior: smooth;
         }
 
+        /* Welcome Empty State */
+        .welcome-hero {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: auto;
+            text-align: center;
+            max-width: 540px;
+            gap: 16px;
+            padding: 40px 20px;
+        }
+
+        .welcome-icon {
+            font-size: 40px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+
+        .welcome-title {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .welcome-sub {
+            color: var(--text-secondary);
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .starter-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .starter-card {
+            background: rgba(22, 28, 45, 0.8);
+            border: 1px solid var(--border);
+            padding: 12px 14px;
+            border-radius: var(--radius-md);
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .starter-card:hover {
+            border-color: var(--accent);
+            background: rgba(30, 39, 62, 0.9);
+            transform: translateY(-2px);
+        }
+
+        .starter-card strong {
+            display: block;
+            font-size: 13px;
+            margin-bottom: 3px;
+            color: var(--text-primary);
+        }
+
+        .starter-card span {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
         .msg-user {
             align-self: flex-end;
             max-width: 80%;
@@ -280,6 +349,7 @@
             line-height: 1.5;
             font-size: 14px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            word-break: break-word;
         }
 
         .msg-assistant {
@@ -296,7 +366,6 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* Tool Execution Collapsible Card (Exact replica of HuggingChat / Claude Code UI) */
         .tool-card {
             background: rgba(18, 24, 38, 0.85);
             border: 1px solid var(--border);
@@ -304,13 +373,8 @@
             padding: 14px 16px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            transition: all 0.2s ease;
+            gap: 10px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-        }
-
-        .tool-card:hover {
-            border-color: rgba(255, 255, 255, 0.15);
         }
 
         .tool-header {
@@ -353,28 +417,13 @@
             transform: translateY(-1px);
         }
 
-        .doc-icon {
-            font-size: 20px;
-        }
-
-        .doc-meta {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .doc-name {
-            font-weight: 600;
-            font-size: 13px;
-            color: var(--text-primary);
-        }
-
-        .doc-sub {
-            font-size: 11px;
-            color: var(--text-muted);
-        }
+        .doc-icon { font-size: 20px; }
+        .doc-meta { display: flex; flex-direction: column; }
+        .doc-name { font-weight: 600; font-size: 13px; color: var(--text-primary); }
+        .doc-sub { font-size: 11px; color: var(--text-muted); }
 
         .input-wrapper {
-            padding: 20px 24px 24px 24px;
+            padding: 16px 24px 20px 24px;
             background: linear-gradient(180deg, transparent 0%, rgba(10, 14, 23, 0.95) 50%);
         }
 
@@ -407,9 +456,7 @@
             line-height: 1.5;
         }
 
-        .prompt-input::placeholder {
-            color: var(--text-muted);
-        }
+        .prompt-input::placeholder { color: var(--text-muted); }
 
         .prompt-actions {
             display: flex;
@@ -461,18 +508,30 @@
             box-shadow: 0 0 25px rgba(99, 102, 241, 0.6);
         }
 
-        /* ==========================================================================
-           3. RIGHT ARTIFACT & DOCUMENT INSPECTOR (SPLIT PANE)
-           ========================================================================== */
+        /* 3. RESIZER DRAG HANDLE */
+        .resizer {
+            width: 5px;
+            cursor: col-resize;
+            background: rgba(255, 255, 255, 0.03);
+            transition: background 0.2s;
+            z-index: 20;
+        }
+        .resizer:hover, .resizer.dragging {
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        /* 4. RIGHT ARTIFACT & DOCUMENT INSPECTOR (SPLIT PANE) */
         .artifact-panel {
-            width: 50%;
+            width: 48%;
+            min-width: 280px;
             background: rgba(15, 20, 32, 0.95);
             border-left: 1px solid var(--border);
             display: flex;
             flex-direction: column;
             backdrop-filter: blur(16px);
             z-index: 5;
-            transition: width 0.3s ease;
+            height: 100vh;
         }
 
         .artifact-header {
@@ -484,28 +543,11 @@
             justify-content: space-between;
         }
 
-        .artifact-title-group {
-            display: flex;
-            flex-direction: column;
-        }
+        .artifact-title-group { display: flex; flex-direction: column; }
+        .artifact-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .artifact-sub { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
 
-        .artifact-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .artifact-sub {
-            font-size: 11px;
-            color: var(--text-muted);
-            font-family: var(--font-mono);
-        }
-
-        .artifact-toolbar {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+        .artifact-toolbar { display: flex; align-items: center; gap: 10px; }
 
         .view-toggle {
             background: rgba(0, 0, 0, 0.3);
@@ -559,81 +601,15 @@
             line-height: 1.6;
         }
 
-        /* Markdown Rendering Styles */
-        .markdown-content h1 {
-            font-size: 24px;
-            margin-bottom: 16px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 12px;
-        }
+        .markdown-content h1 { font-size: 22px; margin-bottom: 14px; font-weight: 700; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        .markdown-content h2 { font-size: 17px; margin-top: 20px; margin-bottom: 10px; font-weight: 600; color: #e2e8f0; }
+        .markdown-content p { margin-bottom: 12px; color: #cbd5e1; }
+        .markdown-content blockquote { background: rgba(99, 102, 241, 0.08); border-left: 4px solid var(--accent); padding: 10px 14px; border-radius: 0 var(--radius-md) var(--radius-md) 0; margin-bottom: 14px; color: #cbd5e1; }
+        .markdown-content table { width: 100%; border-collapse: collapse; margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+        .markdown-content th, .markdown-content td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .markdown-content th { background: rgba(255, 255, 255, 0.04); font-weight: 600; }
+        .markdown-content pre { background: #06090f; border: 1px solid var(--border); padding: 14px; border-radius: var(--radius-md); font-family: var(--font-mono); font-size: 12px; overflow-x: auto; margin-bottom: 16px; color: #38bdf8; }
 
-        .markdown-content h2 {
-            font-size: 18px;
-            margin-top: 24px;
-            margin-bottom: 12px;
-            font-weight: 600;
-            color: #e2e8f0;
-        }
-
-        .markdown-content p {
-            margin-bottom: 14px;
-            color: #cbd5e1;
-        }
-
-        .markdown-content blockquote {
-            background: rgba(99, 102, 241, 0.08);
-            border-left: 4px solid var(--accent);
-            padding: 12px 16px;
-            border-radius: 0 var(--radius-md) var(--radius-md) 0;
-            margin-bottom: 16px;
-            color: #cbd5e1;
-            font-style: italic;
-        }
-
-        .markdown-content table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-            border-radius: var(--radius-md);
-            overflow: hidden;
-            border: 1px solid var(--border);
-        }
-
-        .markdown-content th, .markdown-content td {
-            padding: 10px 14px;
-            text-align: left;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .markdown-content th {
-            background: rgba(255, 255, 255, 0.04);
-            color: var(--text-primary);
-            font-weight: 600;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .markdown-content td {
-            color: var(--text-secondary);
-            font-size: 13px;
-        }
-
-        .markdown-content pre {
-            background: #06090f;
-            border: 1px solid var(--border);
-            padding: 14px;
-            border-radius: var(--radius-md);
-            font-family: var(--font-mono);
-            font-size: 12px;
-            overflow-x: auto;
-            margin-bottom: 16px;
-            color: #38bdf8;
-        }
-
-        /* Code Mode Container */
         .code-view {
             display: none;
             height: 100%;
@@ -658,9 +634,9 @@
         </div>
 
         <div>
-            <div class="section-label">Active Engine</div>
+            <div class="section-label">Active Model Engine</div>
             <div class="model-selector">
-                <div class="model-card active" onclick="selectModel(this, 'ling-3.0-flash', '310 ms', '118.5 tok/s')">
+                <div class="model-card active" data-model="ling-3.0-flash" onclick="selectModel(this, 'ling-3.0-flash', '310 ms', '118.5 tok/s')">
                     <div class="model-header">
                         <span class="model-title">⚡ Ling-3.0-Flash</span>
                         <span class="model-badge">310ms</span>
@@ -668,7 +644,7 @@
                     <span class="model-desc">124B Sparse MoE (5.1B active) • Mooncake</span>
                 </div>
 
-                <div class="model-card" onclick="selectModel(this, 'nanbeige-3b', '420 ms', '88.3 tok/s')">
+                <div class="model-card" data-model="nanbeige-3b" onclick="selectModel(this, 'nanbeige-3b', '420 ms', '88.3 tok/s')">
                     <div class="model-header">
                         <span class="model-title">🪶 Nanbeige 4.2-3B</span>
                         <span class="model-badge">420ms</span>
@@ -676,7 +652,7 @@
                     <span class="model-desc">Looped Transformer • Ultra-Compact</span>
                 </div>
 
-                <div class="model-card" onclick="selectModel(this, 'gemma-4-12b', '1250 ms', '45.2 tok/s')">
+                <div class="model-card" data-model="gemma-4-12b" onclick="selectModel(this, 'gemma-4-12b', '1250 ms', '45.2 tok/s')">
                     <div class="model-header">
                         <span class="model-title">🏋️ Gemma 4 12B</span>
                         <span class="model-badge">1.2s</span>
@@ -684,7 +660,7 @@
                     <span class="model-desc">Encoder-Free Native Multimodal</span>
                 </div>
 
-                <div class="model-card" onclick="selectModel(this, 'ornith-9b', '750 ms', '55.0 tok/s')">
+                <div class="model-card" data-model="ornith-9b" onclick="selectModel(this, 'ornith-9b', '750 ms', '55.0 tok/s')">
                     <div class="model-header">
                         <span class="model-title">🍏 Ornith 1.0-9B</span>
                         <span class="model-badge">750ms</span>
@@ -695,12 +671,12 @@
         </div>
 
         <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-            <div class="section-label">Recent Sessions</div>
+            <div class="section-label">Session History</div>
             <div class="history-list">
-                <div class="history-item active">📄 Claude Code Architecture</div>
-                <div class="history-item">⚡ High-Speed Benchmark Suite</div>
-                <div class="history-item">🧬 Multi-Agent Loop Optimization</div>
-                <div class="history-item">🛠️ MCP Server Scaffolder</div>
+                <div class="history-item active" onclick="loadSession('Interactive Session')">💬 Interactive Studio Session</div>
+                <div class="history-item" onclick="loadStarter('https://docs.chainlit.io/get-started/overview')">🕷️ Chainlit Docs Crawl</div>
+                <div class="history-item" onclick="loadStarter('Build a fast FastAPI auth middleware with JWT tokens')">🛠️ Fast API Auth Task</div>
+                <div class="history-item" onclick="loadStarter('Run model comparison benchmark')">⚡ Speed Benchmark</div>
             </div>
         </div>
 
@@ -714,36 +690,38 @@
     <main class="chat-container">
         <header class="chat-header">
             <div class="chat-header-title">
-                <span>Claude Code Repository Overview & Architecture</span>
+                <span>Autonomous Agent Workspace</span>
             </div>
             <div class="status-pill">
                 <span class="status-dot"></span>
-                <span id="activeModelStatus">Ling-3.0-Flash (118.5 tok/s)</span>
+                <span id="activeModelStatus">⚡ Ling-3.0-Flash (118.5 tok/s)</span>
             </div>
         </header>
 
         <div class="messages-area" id="messageList">
-            <!-- User Message -->
-            <div class="msg-user">
-                https://github.com/anthropics/claude-code what is this how the harness is build convert this into a okf format.md for me
-            </div>
-
-            <!-- Assistant Response with Collapsible Tool Card -->
-            <div class="msg-assistant">
-                <div class="tool-card">
-                    <div class="tool-header">
-                        <div class="tool-spinner"></div>
-                        <span>Called 1 tool › <strong>Query Agent Harness</strong></span>
+            <!-- Empty Hero State (No hardcoded text) -->
+            <div class="welcome-hero" id="welcomeHero">
+                <div class="welcome-icon">⚡</div>
+                <div class="welcome-title">SkillOpt Agentic Coding Studio</div>
+                <div class="welcome-sub">
+                    Self-correcting Maker-Checker evaluator-optimizer loop with Crawl4AI web grounding and sub-second sparse MoE inference.
+                </div>
+                <div class="starter-grid">
+                    <div class="starter-card" onclick="loadStarter('https://docs.chainlit.io/get-started/overview')">
+                        <strong>🕷️ Crawl & Ingest Web Docs</strong>
+                        <span>Crawl4AI token-optimized Markdown</span>
                     </div>
-                    <p style="color: var(--text-secondary); font-size: 13px;">
-                        I'll create a comprehensive markdown document about the Claude Code repository and its architecture for you.
-                    </p>
-                    <div class="tool-doc-chip" onclick="focusArtifact()">
-                        <span class="doc-icon">📄</span>
-                        <div class="doc-meta">
-                            <span class="doc-name">Claude Code Repository Overview & Architecture</span>
-                            <span class="doc-sub">Document • 4-Tier Memory & Async Coroutine</span>
-                        </div>
+                    <div class="starter-card" onclick="loadStarter('Build an async Redis caching decorator with fallback in Python')">
+                        <strong>🛠️ Synthesize Async Code</strong>
+                        <span>Deterministic AST syntax gating</span>
+                    </div>
+                    <div class="starter-card" onclick="loadStarter('Compare Ling-3.0-flash vs Gemma-4-12B on coding speed')">
+                        <strong>📊 Model Speed Benchmark</strong>
+                        <span>Compare TTFT & token throughput</span>
+                    </div>
+                    <div class="starter-card" onclick="loadStarter('Create a JWT authentication middleware for FastAPI')">
+                        <strong>🔒 Auth Middleware</strong>
+                        <span>Verified unit tests & code artifact</span>
                     </div>
                 </div>
             </div>
@@ -751,25 +729,28 @@
 
         <div class="input-wrapper">
             <div class="prompt-box">
-                <textarea class="prompt-input" id="userInput" placeholder="Ask anything... (e.g. 'Synthesize model benchmarks' or 'Refactor orchestrator')"></textarea>
+                <textarea class="prompt-input" id="userInput" placeholder="Ask anything or paste a URL (e.g. https://github.com/unclecode/crawl4ai)..." onkeydown="handleKeyDown(event)"></textarea>
                 <div class="prompt-actions">
                     <div class="pill-group">
-                        <div class="feature-pill">➕ Attach</div>
-                        <div class="feature-pill">🎛️ MCP (2) ✕</div>
-                        <div class="feature-pill">⚡ Fast Mode</div>
+                        <div class="feature-pill" onclick="loadStarter('https://github.com/unclecode/crawl4ai')">🕷️ Crawl URL</div>
+                        <div class="feature-pill" onclick="loadStarter('Run test suite on workspace')">🧪 Run Tests</div>
+                        <div class="feature-pill">⚡ Fast MoE</div>
                     </div>
-                    <button class="send-btn" onclick="sendMessage()">➔</button>
+                    <button class="send-btn" id="sendButton" onclick="sendMessage()">➔</button>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- 3. RIGHT ARTIFACT & DOCUMENT INSPECTOR (SPLIT PANE) -->
+    <!-- 3. DRAGGABLE RESIZER HANDLE -->
+    <div class="resizer" id="dragResizer"></div>
+
+    <!-- 4. RIGHT ARTIFACT & DOCUMENT INSPECTOR (SPLIT PANE) -->
     <section class="artifact-panel" id="artifactPane">
         <header class="artifact-header">
             <div class="artifact-title-group">
-                <span class="artifact-title">Claude Code — Repository Overview & Architecture</span>
-                <span class="artifact-sub">claude_code_inspired_harness_architecture.md</span>
+                <span class="artifact-title" id="artifactTitle">Artifact & Code Inspector</span>
+                <span class="artifact-sub" id="artifactFilename">Live Markdown & Code Preview</span>
             </div>
             <div class="artifact-toolbar">
                 <div class="view-toggle">
@@ -783,89 +764,149 @@
         </header>
 
         <div class="artifact-body" id="artifactRendered">
-            <div class="markdown-content">
-                <h1>Claude Code — Repository Overview & Architecture</h1>
-
+            <div class="markdown-content" id="renderedMarkdown">
+                <h1>Ready for Output</h1>
                 <blockquote>
-                    <strong>“Repository:</strong> <a href="#" style="color: var(--accent);">anthropics/claude-code</a><br>
-                    <strong>Stars:</strong> 140,574+ | <strong>Forks:</strong> 22,608+ | <strong>Created:</strong> Feb 22, 2025<br>
-                    <strong>Language:</strong> TypeScript (512K LOC across ~1,884 files)<br>
-                    <strong>Runtime:</strong> Bun (~150ms cold start)“
+                    Artifacts, synthesized code, and crawled web documentation will appear here in real-time as you chat on the left.
                 </blockquote>
-
-                <h2>What is Claude Code?</h2>
-                <p>
-                    Claude Code is an <strong>agentic coding tool</strong> that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows — all through natural language commands.
-                </p>
-                <p>
-                    It serves as an <strong>agentic harness</strong> around Claude: it provides the tools, context management, and execution environment that turn a language model into a capable coding agent.
-                </p>
-
-                <h2>Core Philosophy</h2>
-                <p>The agentic loop is powered by two fundamental components:</p>
-                <ol style="margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary);">
-                    <li><strong>Models</strong> that reason about your code</li>
-                    <li><strong>Tools</strong> that act on the environment</li>
-                </ol>
-
-                <h2>System Architecture: Six-Layer Stack</h2>
+                <h2>Features Supported:</h2>
                 <table>
                     <thead>
-                        <tr>
-                            <th>Layer</th>
-                            <th>Component</th>
-                            <th>Purpose</th>
-                        </tr>
+                        <tr><th>Engine</th><th>Capabilities</th></tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td><strong>1. UI/Interfaces</strong></td>
-                            <td>CLI, VS Code, JetBrains, Web, SDK</td>
-                            <td>Entry points for user interaction</td>
-                        </tr>
-                        <tr>
-                            <td><strong>2. Agent Loop</strong></td>
-                            <td><code>query.ts</code> — async generator</td>
-                            <td>Heartbeat: stream → tool call → execute → loop</td>
-                        </tr>
-                        <tr>
-                            <td><strong>3. Tools</strong></td>
-                            <td>~40 tools (51K LOC, 184 files)</td>
-                            <td>File ops, bash, search, web, MCP, subagents</td>
-                        </tr>
-                        <tr>
-                            <td><strong>4. Services</strong></td>
-                            <td>54K LOC, 130 files</td>
-                            <td>API adapter, context compaction, memory, telemetry</td>
-                        </tr>
-                        <tr>
-                            <td><strong>5. State</strong></td>
-                            <td>Mutable singleton + reactive store</td>
-                            <td>Session config, messages, approvals</td>
-                        </tr>
+                        <tr><td><strong>Crawl4AI</strong></td><td>Live web scraping to token-efficient Markdown</td></tr>
+                        <tr><td><strong>Evaluator-Optimizer</strong></td><td>Maker/Checker AST syntax verification loop</td></tr>
+                        <tr><td><strong>Ling-3.0-flash</strong></td><td>118+ tokens/sec sparse MoE execution</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
         <div class="code-view" id="artifactRawCode">
-# Claude Code — Repository Overview & Architecture
-
-> **Repository:** anthropics/claude-code
-> **Stars:** 140,574+ | **Forks:** 22,608+ | **Created:** Feb 22, 2025
-> **Language:** TypeScript (512K LOC across ~1,884 files)
-> **Runtime:** Bun (~150ms cold start)
-
-## What is Claude Code?
-Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks.
+# Ready for Output
+Artifacts and code will render here.
         </div>
     </section>
 
     <script>
+        let currentActiveModel = 'ling-3.0-flash';
+
         function selectModel(card, modelKey, ttft, speed) {
             document.querySelectorAll('.model-card').forEach(c => c.classList.remove('active'));
             card.classList.add('active');
+            currentActiveModel = modelKey;
             document.getElementById('activeModelStatus').innerText = `${card.querySelector('.model-title').innerText} (${speed})`;
+        }
+
+        function loadStarter(promptText) {
+            const input = document.getElementById('userInput');
+            input.value = promptText;
+            sendMessage();
+        }
+
+        function handleKeyDown(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function renderBasicMarkdown(mdText) {
+            let html = mdText
+                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
+                .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+                .replace(/```[a-z]*\n([\s\S]*?)\n```/gim, '<pre><code>$1</code></pre>')
+                .replace(/`([^`]+)`/gim, '<code>$1</code>')
+                .replace(/\n\n/gim, '<p></p>');
+            return html;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            // Hide empty hero
+            const hero = document.getElementById('welcomeHero');
+            if (hero) hero.style.display = 'none';
+
+            const list = document.getElementById('messageList');
+
+            // 1. Append User Message
+            const userDiv = document.createElement('div');
+            userDiv.className = 'msg-user';
+            userDiv.innerText = message;
+            list.appendChild(userDiv);
+
+            input.value = '';
+            list.scrollTop = list.scrollHeight;
+
+            // 2. Append Assistant Loading Bubble with Tool Spinner
+            const assistDiv = document.createElement('div');
+            assistDiv.className = 'msg-assistant';
+            assistDiv.innerHTML = `
+                <div class="tool-card">
+                    <div class="tool-header">
+                        <div class="tool-spinner"></div>
+                        <span>Executing Agent Harness with <strong>${currentActiveModel}</strong>...</span>
+                    </div>
+                </div>
+            `;
+            list.appendChild(assistDiv);
+            list.scrollTop = list.scrollHeight;
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message, model: currentActiveModel })
+                });
+
+                if (!response.ok) throw new Error("API server responded with error");
+                const data = await response.json();
+
+                // 3. Update Assistant Bubble with Tool Chip and Explanation
+                assistDiv.innerHTML = `
+                    <div class="tool-card">
+                        <div class="tool-header">
+                            <span style="color: var(--success);">✅</span>
+                            <span>Called 1 tool › <strong>${data.tool_called.name}</strong> (${data.tool_called.duration_sec}s)</span>
+                        </div>
+                        <p style="color: var(--text-secondary); font-size: 13px;">${data.text}</p>
+                        <div class="tool-doc-chip" onclick="focusArtifact()">
+                            <span class="doc-icon">📄</span>
+                            <div class="doc-meta">
+                                <span class="doc-name">${data.artifact_title}</span>
+                                <span class="doc-sub">Synthesized by ${data.model} • ${data.latency_ms}ms</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // 4. Update Right Artifact Inspector
+                document.getElementById('artifactTitle').innerText = data.artifact_title;
+                document.getElementById('artifactFilename').innerText = `${data.tool_called.name} • ${data.latency_ms}ms TTFT`;
+                document.getElementById('renderedMarkdown').innerHTML = renderBasicMarkdown(data.artifact);
+                document.getElementById('artifactRawCode').innerText = data.artifact;
+
+                focusArtifact();
+
+            } catch (err) {
+                assistDiv.innerHTML = `
+                    <div class="tool-card" style="border-color: var(--danger);">
+                        <div class="tool-header" style="color: var(--danger);">
+                            <span>❌ Error executing request: ${err.message}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            list.scrollTop = list.scrollHeight;
         }
 
         function setViewMode(mode) {
@@ -890,21 +931,22 @@ Claude Code is an agentic coding tool that lives in your terminal, understands y
         function copyArtifact() {
             const text = document.getElementById('artifactRawCode').innerText;
             navigator.clipboard.writeText(text);
-            alert("Artifact Markdown copied to clipboard!");
+            alert("Copied to clipboard!");
         }
 
         function downloadArtifact() {
             const text = document.getElementById('artifactRawCode').innerText;
+            const title = document.getElementById('artifactTitle').innerText.replace(/\s+/g, '_').toLowerCase();
             const blob = new Blob([text], { type: 'text/markdown' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = "claude_code_architecture.md";
+            a.download = `${title}.md`;
             a.click();
         }
 
         function toggleFullscreen() {
             const pane = document.getElementById('artifactPane');
-            pane.style.width = pane.style.width === '100%' ? '50%' : '100%';
+            pane.style.width = pane.style.width === '100%' ? '48%' : '100%';
         }
 
         function focusArtifact() {
@@ -913,38 +955,29 @@ Claude Code is an agentic coding tool that lives in your terminal, understands y
             setTimeout(() => { pane.style.boxShadow = "none"; }, 800);
         }
 
-        function sendMessage() {
-            const input = document.getElementById('userInput');
-            const val = input.value.trim();
-            if (!val) return;
+        // Draggable Resizer Implementation
+        const resizer = document.getElementById('dragResizer');
+        const artifactPane = document.getElementById('artifactPane');
 
-            const list = document.getElementById('messageList');
-            const userDiv = document.createElement('div');
-            userDiv.className = 'msg-user';
-            userDiv.innerText = val;
-            list.appendChild(userDiv);
+        resizer.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            resizer.classList.add('dragging');
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
 
-            input.value = '';
-            list.scrollTop = list.scrollHeight;
+        function onMouseMove(e) {
+            const containerWidth = document.body.clientWidth;
+            const newWidth = containerWidth - e.clientX;
+            if (newWidth > 260 && newWidth < (containerWidth - 340)) {
+                artifactPane.style.width = `${newWidth}px`;
+            }
+        }
 
-            // Generate assistant response
-            setTimeout(() => {
-                const assistDiv = document.createElement('div');
-                assistDiv.className = 'msg-assistant';
-                assistDiv.innerHTML = `
-                    <div class="tool-card">
-                        <div class="tool-header">
-                            <div class="tool-spinner"></div>
-                            <span>Executed in <strong>310ms</strong></span>
-                        </div>
-                        <p style="color: var(--text-secondary); font-size: 13px;">
-                            Task executed with our active agent harness. Artifact updated in the inspector.
-                        </p>
-                    </div>
-                `;
-                list.appendChild(assistDiv);
-                list.scrollTop = list.scrollHeight;
-            }, 400);
+        function onMouseUp() {
+            resizer.classList.remove('dragging');
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
         }
     </script>
 </body>

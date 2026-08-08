@@ -8,10 +8,12 @@ from typing import List, Dict
 # Import reward function from grpo_trainer
 from grpo_trainer import composite_reward
 
+import model_router
+
 class DiffEngine:
-    def __init__(self, base_model_url='http://localhost:11434', enhanced_url='http://localhost:8800'):
+    def __init__(self, base_model_url='http://localhost:11434', enhanced_url=None):
         self.base_model_url = base_model_url.rstrip('/')
-        self.enhanced_url = enhanced_url.rstrip('/')
+        self.enhanced_url = (enhanced_url or model_router.get_url("coder")).rstrip('/')
         
     def query_ollama(self, prompt: str, model: str = 'ornith:9b') -> str:
         """

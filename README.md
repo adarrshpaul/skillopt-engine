@@ -1,83 +1,135 @@
-# 🚀 SkillOpt Engine: Self-Improving Local AI Coding Stack
+# Local AI Research Stack
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Backend: MLX GPU](https://img.shields.io/badge/Hardware-Apple_Silicon_MLX-blue.svg)](https://github.com/ml-explore/mlx)
-[![Architecture: Dual--Layer](https://img.shields.io/badge/Architecture-CAA_Steering_%2B_GBNF-green.svg)](#dual-layer-architecture)
+**What this repo provides**
 
-**SkillOpt Engine** is a 100% local, self-improving AI software engineering stack running natively on Apple Silicon. It combines **Dual-Layer Activation Steering**, **Logit-Level Grammar Masking**, **Multi-Agent Planning**, and a **Graph-Based DPO Preference Flywheel**.
-
----
-
-## 🏛️ System Architecture
-
-```text
-                  ┌──────────────────────────────────────────────────────────┐
-                  │              Dual-Layer Steering Engine                  │
-                  └────────────────────────────┬─────────────────────────────┘
-                                               │
-               ┌───────────────────────────────┴───────────────────────────────┐
-               ▼                                                               ▼
- ┌────────────────────────────┐                                 ┌────────────────────────────┐
- │ Layer 1: Steering Vectors  │                                 │ Layer 2: GBNF Logit Fences │
- │ (Contrastive Activation)   │                                 │ (Grammar-Constrained Tokens)│
- └────────────────────────────┘                                 └────────────────────────────┘
-               │                                                               │
-               └───────────────────────────────┬───────────────────────────────┘
-                                               ▼
-                                 ┌───────────────────────────┐
-                                 │ Multi-Agent Orchestrator  │
-                                 │ (Gemma-4 Plan / Ornith Code)│
-                                 └─────────────┬─────────────┘
-                                               ▼
-                                 ┌───────────────────────────┐
-                                 │  MCTS DPO Flywheel        │
-                                 │  (py_compile / unittest)  │
-                                 └───────────────────────────┘
-```
+- **Admission controller**: FastAPI UI + gRPC admission service implementing P1 token bucket, P2 FIFO with preemption, P3 opportunistic scheduler.
+- **P2 worker**: gRPC worker with `Preempt` and `Resume` endpoints; atomic checkpoint persistence to `checkpoints.json`.
+- **P3 worker**: FAISS `IndexIDMap` + SQLite metadata for real vector indexing and queries.
+- **Test harness**: `loadgen.py` and `latency_probe.py` for noisy neighbor and latency validation.
+- **Makefile**: reproducible build, run, and test commands.
 
 ---
 
-## 📊 Benchmark Results
+## Prerequisites
 
-Reproducible performance metrics running locally on Apple Silicon GPU (`run_benchmarks.py`):
-
-| Benchmark Metric | Result | Status |
-|---|---|---|
-| **Compilation Pass Rate** | `100.0%` (35/35 workspace Python files) | ✅ PASSED |
-| **MCP Scaffold Build & Test Latency** | `0.02 seconds` | ✅ PASSED |
-| **DPO Verified Preference Pair Yield** | `2 Pairs Logged` (`dpo_graph_dataset.jsonl`) | ✅ ACTIVE |
-| **Local Inference Server Latency** | `< 2.5 ms` (`AtomicChat/Ornith-9B-MLX-6bit`) | ✅ ONLINE |
+- **OS**: Linux or macOS
+- **Docker** and **docker-compose**
+- **Python 3.9+** for local runs
+- **pip** for installing Python dev dependencies
+- Ports used:
+  - **5001** FastAPI UI (Note: Port 5000 is used by macOS AirPlay)
+  - **50051** gRPC admission
+  - **50052** gRPC P2 worker
+  - **8001** Prometheus metrics
 
 ---
 
-## ⚡ Quick Start & Usage
+## Quickstart using Docker Compose
 
-### 1. Install & Setup
+1. **Build and start everything**
+   ```bash
+   make up
+   ```
+   *or to build images first:*
+   ```bash
+   make build
+   make up
+   ```
+
+2. **Open the UI**
+   Visit `http://localhost:5001` to view the admission controller dashboard.
+
+3. **Metrics**
+   Prometheus metrics are exposed at `http://localhost:8001/`.
+
+4. **Stop**
+   ```bash
+   make down
+   ```
+
+## Run locally without Docker for development
+
+1. **Generate gRPC code**
+   ```bash
+   make gen-protos
+   ```
+
+2. **Start services in separate terminals or background**
+   ```bash
+   # Terminal 1
+   ./ml-env/bin/python p2_worker_stub.py
+
+   # Terminal 2
+   ./ml-env/bin/python p3_faiss_worker.py
+
+   # Terminal 3
+   ./ml-env/bin/python admission_controller_grpc.py
+   ```
+   Visit `http://localhost:5001` for the UI.
+
+## Test and validate
+
+### 1. P1 latency SLO
+Run the latency probe for P1:
 ```bash
-git clone https://github.com/your-username/skillopt-engine.git
-cd skillopt-engine
-pip install -r requirements.txt
+make test-latency
 ```
+**Success criteria**: P50 < 200ms, P95 < 1s under light load.
 
-### 2. Run the Unified Master CLI
+### 2. Noisy neighbor resilience
+Run a P3 noisy load and measure P1 latency concurrently:
 ```bash
-# Sync prompt guidelines directly into Cursor IDE and Antigravity agents
-python3 skillopt_engine_cli.py sync
+# Start noisy P3 load
+make test-noisy
 
-# Scaffold and verify a new Model Context Protocol (MCP) server
-python3 skillopt_engine_cli.py mcp my_calculator
+# In another terminal run P1 probe
+make test-latency
+```
+**Success criteria**: P1 latency remains within SLOs. No OOMs for Ling-like services if configured.
 
-# Run Gemma-4 (Planner) + Ornith (Coder) task routing
-python3 skillopt_engine_cli.py orchestrate "Build a Python CLI for string utilities"
+### 3. Preemption and checkpoint resume
+Enqueue many P2 tasks:
+```bash
+./ml-env/bin/python loadgen.py --qps 20 --duration 60 --priority 2
+```
+Trigger P1 burst to force preemption:
+```bash
+./ml-env/bin/python loadgen.py --qps 50 --duration 30 --priority 1
+```
+Inspect checkpoint file:
+```bash
+ls -l checkpoints.json
+cat checkpoints.json
+```
+Resume a checkpoint via the P2 worker gRPC `Resume` endpoint or by restarting the worker and calling the resume flow.
 
-# Run Graph-Based DPO Candidate Search & LoRA Fine-Tuning Pass
-python3 skillopt_engine_cli.py self-improve "Write a palindrome checker with type hints."
+**Success criteria**: `checkpoints.json` contains checkpoint tokens and metadata. Resume returns `RESUMED` and task completes.
 
-# Run workspace health check across all Python files
-python3 skillopt_engine_cli.py health
+## Logs and troubleshooting
+Tail logs for all services:
+```bash
+make logs
 ```
 
----
+**Common issues**
+- **gRPC import errors**: ensure `proto/*_pb2.py` and `proto/*_pb2_grpc.py` exist. Run `make gen-protos`.
+- **Port conflicts**: ensure ports 5001, 50051, 50052, 8001 are free.
+- **FAISS errors**: install faiss-cpu compatible with your Python version.
+- **Checkpoint file missing**: ensure checkpoints are written in the working directory.
 
-## 📜 License
-Distributed under the MIT License. See `LICENSE` for more information.
+## Next steps and recommended improvements
+- Add TLS and mTLS for gRPC channels.
+- Persist checkpoints to a durable store for multi-host resilience.
+- Add Grafana dashboard JSON and Prometheus alert rules for SLO violations.
+- Replace local FAISS with a managed vector DB for scale.
+
+## Useful Makefile commands
+- `make gen-protos` generate gRPC code
+- `make build` build docker images
+- `make up` start stack with docker-compose
+- `make down` stop stack
+- `make logs` tail logs
+- `make test-noisy` run P3 noisy load
+- `make test-latency` run P1 latency probe
+- `make run-local` run services locally without Docker
+- `make demo` run the automated research snapshot demo

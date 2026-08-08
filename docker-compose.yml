@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  admission-controller:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.10-slim
+        WORKDIR /app
+        RUN pip install --no-cache-dir flask prometheus_client psutil
+        COPY admission_controller.py /app/
+        CMD ["python3", "admission_controller.py", "--port", "5000", "--metrics-port", "8001"]
+    ports:
+      - "5000:5000"
+      - "8001:8001"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+
+  ling-orchestrator:
+    image: inclusionai/ling-3.0-flash:latest
+    environment:
+      - PREFIX_RESERVE=0.65
+      - SGLANG_PORT=8801
+      - MEM_FRACTION_STATIC=0.85
+    ports:
+      - "8801:8801"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 24G
+        reservations:
+          memory: 16G
+      restart_policy:
+        condition: on-failure
+
+  ornith-coder:
+    image: mlx-community/ornith-9b:latest
+    environment:
+      - PORT=8800
+      - MAX_CONCURRENCY=4
+    ports:
+      - "8800:8800"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 6G
+      restart_policy:
+        condition: on-failure
+
+  background-worker:
+    image: python:3.10-slim
+    command: ["python3", "-c", "import time; print('Background DPO worker pool active'); time.sleep(3600)"]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G

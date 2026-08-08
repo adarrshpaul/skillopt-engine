@@ -165,13 +165,18 @@ class SteerRequestHandler(BaseHTTPRequestHandler):
         """Handles POST requests (generation)."""
         parsed_path = urlparse(self.path).path
 
-        if parsed_path in ('/v1/generate', '/v1/generate_unsteered'):
+        if parsed_path in ('/v1/generate', '/v1/generate_unsteered', '/v1/chat/completions'):
             data = self._read_json_body()
-            if not data or 'prompt' not in data:
-                self._send_response(400, {"error": "Missing 'prompt' in request body."})
+            if not data:
+                self._send_response(400, {"error": "Missing request body."})
                 return
 
-            prompt = data['prompt']
+            if parsed_path == '/v1/chat/completions':
+                messages = data.get('messages', [])
+                prompt = messages[-1]['content'] if messages else data.get('prompt', '')
+            else:
+                prompt = data.get('prompt', '')
+
             max_tokens = data.get('max_tokens', 512)
             
             # Prepare inputs
@@ -181,7 +186,7 @@ class SteerRequestHandler(BaseHTTPRequestHandler):
             handles = []
             steered_skills = []
 
-            if parsed_path == '/v1/generate':
+            if parsed_path in ('/v1/generate', '/v1/generate_unsteered', '/v1/chat/completions'):
                 # Apply steering hooks
                 steering_vectors = data.get('steering_vectors', [])
                 alpha = data.get('alpha', 1.0)
@@ -233,14 +238,27 @@ class SteerRequestHandler(BaseHTTPRequestHandler):
                     generated_tokens = outputs[0][input_length:]
                     generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
                     
-                    response = {
-                        "text": generated_text,
-                        "tokens_generated": len(generated_tokens),
-                        "gbnf_active": use_gbnf
-                    }
-                    
-                    if parsed_path == '/v1/generate':
-                        response["steered_skills"] = steered_skills
+                    if parsed_path == '/v1/chat/completions':
+                        response = {
+                            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+                            "object": "chat.completion",
+                            "created": int(time.time()),
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "message": {"role": "assistant", "content": generated_text},
+                                    "finish_reason": "stop"
+                                }
+                            ]
+                        }
+                    else:
+                        response = {
+                            "text": generated_text,
+                            "tokens_generated": len(generated_tokens),
+                            "gbnf_active": use_gbnf
+                        }
+                        if parsed_path == '/v1/generate':
+                            response["steered_skills"] = steered_skills
 
                     self._send_response(200, response)
 

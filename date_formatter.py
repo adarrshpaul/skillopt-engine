@@ -38,3 +38,5 @@ class DateFormatter:
 
         Returns:
             The formatted date string.
+        """
+        return date.strftime(self.date_format)

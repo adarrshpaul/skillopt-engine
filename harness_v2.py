@@ -49,54 +49,93 @@ class ModelProfile:
     simulated_tokens_sec: float
     base_pass_rate: float
     description: str
+    base_url: str = "http://localhost:8801/v1"
+    port: int = 8801
 
 class ModelRegistry:
     """
-    Manages active model switching and profile dispatch.
-    Supports Ling-3.0-flash, Nanbeige-3B, Gemma-4-12B, and Ornith-9B.
+    Two-model SkillOpt fleet (benchmark winners):
+      :8801  Ling   — mlx-community/Ling-mini-2.0-4bit  (runnable Ling-line stand-in;
+                       full inclusionAI/Ling-3.0-flash MLX is ~70GB and won't fit 16GB)
+      :8802  Nanbeige — mlx-community/Nanbeige4.1-3B-heretic-4bit
     """
+    import model_router
+    LING_MODEL_ID = model_router.get_model("planner")
+    NANBEIGE_MODEL_ID = "mlx-community/Nanbeige4.1-3B-heretic-4bit"
+
+    LING_URL = model_router.get_url("planner")
+    NANBEIGE_URL = "http://localhost:8802/v1"
+
+    # Legacy aliases (gemma/ornith → nearest of the two)
+    GEMMA_MODEL_ID = NANBEIGE_MODEL_ID
+    ORNITH_MODEL_ID = model_router.get_model("coder")
+    GEMMA_URL = NANBEIGE_URL
+    ORNITH_URL = model_router.get_url("coder")
+    LOCAL_MODEL_PATH = LING_MODEL_ID
+    FLASH_MODEL_ID = LING_MODEL_ID
+    COMPACT_MODEL_ID = NANBEIGE_MODEL_ID
+    FLASH_URL = LING_URL
+    COMPACT_URL = NANBEIGE_URL
+
     MODELS = {
         "ling-3.0-flash": ModelProfile(
-            model_id="inclusionAI/Ling-3.0-flash",
+            model_id=LING_MODEL_ID,
             display_name="Ling-3.0-Flash (Fastest)",
-            architecture="124B Sparse MoE (1/64)",
+            architecture="124B Sparse MoE (1/64) • Ling-mini MLX",
             active_params="5.1B",
             simulated_ttft_ms=310.0,
             simulated_tokens_sec=118.5,
             base_pass_rate=76.8,
-            description="Ultra-fast sparse MoE with Mooncake hierarchical caching. Ideal for high-speed loops."
+            description="Benchmark winner — Ling line on dedicated :8801.",
+            base_url=LING_URL,
+            port=8801,
         ),
         "nanbeige-3b": ModelProfile(
-            model_id="Nanbeige/Nanbeige4.2-3B",
+            model_id=NANBEIGE_MODEL_ID,
             display_name="Nanbeige 4.2-3B (Compact)",
             architecture="Looped Dense Transformer",
             active_params="3.0B",
             simulated_ttft_ms=420.0,
             simulated_tokens_sec=88.3,
             base_pass_rate=68.1,
-            description="Ultra-compact dense model. Fits in minimal VRAM with high reasoning density."
+            description="Benchmark compact fallback — Nanbeige 4bit on :8802.",
+            base_url=NANBEIGE_URL,
+            port=8802,
         ),
         "gemma-4-12b": ModelProfile(
-            model_id="Google/Gemma-4-12B",
-            display_name="Gemma 4 12B (Multimodal)",
-            architecture="Encoder-Free Dense Multimodal",
-            active_params="12.0B",
-            simulated_ttft_ms=1250.0,
-            simulated_tokens_sec=45.2,
-            base_pass_rate=72.4,
-            description="Encoder-free multimodal model for complex vision/code reasoning."
+            model_id=NANBEIGE_MODEL_ID,
+            display_name="Nanbeige 4.2-3B (Compact)",
+            architecture="Looped Dense Transformer",
+            active_params="3.0B",
+            simulated_ttft_ms=420.0,
+            simulated_tokens_sec=88.3,
+            base_pass_rate=68.1,
+            description="Aliased to Nanbeige :8802.",
+            base_url=NANBEIGE_URL,
+            port=8802,
         ),
         "ornith-9b": ModelProfile(
-            model_id="DeepReinforce/Ornith-1.0-9B",
-            display_name="Ornith 1.0-9B (Local MLX)",
-            architecture="Dense Transformer (Apple Silicon MLX)",
+            model_id=ORNITH_MODEL_ID,
+            display_name="Ornith-9B (Coder)",
+            architecture="Dense Transformer",
             active_params="9.0B",
-            simulated_ttft_ms=750.0,
-            simulated_tokens_sec=55.0,
-            base_pass_rate=67.8,
-            description="Offline default running natively on Mac GPU via MLX."
-        )
+            simulated_ttft_ms=350.0,
+            simulated_tokens_sec=95.0,
+            base_pass_rate=72.5,
+            description="Coder model on Steer Server :8800.",
+            base_url=ORNITH_URL,
+            port=8800,
+        ),
     }
+
+    @classmethod
+    def resolve(cls, model_key: str) -> ModelProfile:
+        key = (model_key or "ling-3.0-flash").lower()
+        return cls.MODELS.get(key, cls.MODELS["ling-3.0-flash"])
+
+    @classmethod
+    def endpoint_for(cls, model_key: str) -> str:
+        return cls.resolve(model_key).base_url
 
     def __init__(self, default_model: str = "ling-3.0-flash"):
         self.active_model_key = default_model.lower()

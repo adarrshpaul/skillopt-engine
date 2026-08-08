@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Fleet API Tester</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #0f1115;
+            --bg-surface: rgba(26, 29, 36, 0.7);
+            --bg-surface-hover: rgba(36, 40, 50, 0.9);
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.5);
+            --success: #10b981;
+            --error: #ef4444;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            flex: 1;
+            width: 100%;
+        }
+
+        header {
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 900px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        select, textarea, input {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            color: #fff;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        select:focus, textarea:focus, input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+            font-family: inherit;
+        }
+
+        .btn {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 0.875rem 1.5rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .btn:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+            opacity: 0.7;
+        }
+
+        .loader {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .response-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .response-box {
+            flex: 1;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            overflow-y: auto;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: #a78bfa; 
+            min-height: 400px;
+            white-space: pre-wrap;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #475569;
+        }
+
+        .indicator.active { background: var(--success); box-shadow: 0 0 8px var(--success); }
+        .indicator.error { background: var(--error); box-shadow: 0 0 8px var(--error); }
+
+        .fleet-info {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            padding: 1rem;
+            font-size: 0.85rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .fleet-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .fleet-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .role-name { font-weight: 600; color: #fff; text-transform: capitalize; }
+        .model-name { color: #60a5fa; font-family: monospace; }
+        
+        .meta-data {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Model Fleet API Tester</h1>
+                <div class="subtitle">Direct interface to Master Cockpit & LLM Fleet</div>
+            </div>
+            <div class="status-item">
+                <div id="fleetStatus" class="indicator"></div>
+                <span id="fleetStatusText">Connecting to Fleet...</span>
+            </div>
+        </header>
+
+        <div class="layout">
+            <div class="card">
+                <h2><svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Configuration</h2>
+                
+                <div class="form-group">
+                    <label>Priority (Token Bucket)</label>
+                    <select id="reqPriority">
+                        <option value="1">Priority 1 (Interactive / Planner)</option>
+                        <option value="2">Priority 2 (Background / Coder)</option>
+                        <option value="3">Priority 3 (Batch / Crawler)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label>Payload (Prompt)</label>
+                    <textarea id="reqPayload" placeholder="Enter your prompt here... e.g. 'plan a website layout' or 'write a hello world script'"></textarea>
+                </div>
+
+                <button id="sendBtn" class="btn" style="margin-top: auto;">
+                    <span id="btnText">Send Test Request</span>
+                    <div id="btnLoader" class="loader"></div>
+                </button>
+            </div>
+
+            <div class="card response-container">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2><svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Execution Output</h2>
+                    <div class="meta-data" id="execMeta"></div>
+                </div>
+
+                <div class="response-box" id="responseBox">Waiting for input...</div>
+
+                <div class="status-bar">
+                    <div style="flex: 1;">
+                        <div style="margin-bottom: 0.5rem; font-weight: 500; color: #fff;">Active Fleet Topology</div>
+                        <div class="fleet-info" id="fleetInfo">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fleetStatus = document.getElementById('fleetStatus');
+        const fleetStatusText = document.getElementById('fleetStatusText');
+        const fleetInfo = document.getElementById('fleetInfo');
+        const sendBtn = document.getElementById('sendBtn');
+        const btnText = document.getElementById('btnText');
+        const btnLoader = document.getElementById('btnLoader');
+        const responseBox = document.getElementById('responseBox');
+        const reqPayload = document.getElementById('reqPayload');
+        const reqPriority = document.getElementById('reqPriority');
+        const execMeta = document.getElementById('execMeta');
+
+        async function loadFleetConfig() {
+            try {
+                const res = await fetch('/api/fleet');
+                if (!res.ok) throw new Error('Fleet API down');
+                const data = await res.json();
+                
+                let html = '';
+                for (const [role, config] of Object.entries(data.roles)) {
+                    html += `
+                        <div class="fleet-item">
+                            <span class="role-name">${role}</span>
+                            <span class="model-name">${config.model.split('/').pop()}</span>
+                        </div>
+                    `;
+                }
+                fleetInfo.innerHTML = html;
+                
+                fleetStatus.className = 'indicator active';
+                fleetStatusText.textContent = 'Fleet Online';
+            } catch (err) {
+                fleetStatus.className = 'indicator error';
+                fleetStatusText.textContent = 'Fleet Offline (503)';
+                fleetInfo.innerHTML = '<span style="color:var(--error)">Could not fetch fleet configuration.</span>';
+            }
+        }
+
+        sendBtn.addEventListener('click', async () => {
+            const text = reqPayload.value.trim();
+            if (!text) {
+                responseBox.textContent = 'Please enter a prompt payload.';
+                return;
+            }
+
+            sendBtn.disabled = true;
+            btnText.textContent = 'Executing...';
+            btnLoader.style.display = 'block';
+            responseBox.textContent = 'Transmitting request to Admission Controller...\n\nWaiting for inference generation. This may take up to 60-90 seconds for large models...';
+            execMeta.innerHTML = '';
+            
+            const startTime = performance.now();
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: text,
+                        priority: parseInt(reqPriority.value)
+                    })
+                });
+
+                const endTime = performance.now();
+                const latency = ((endTime - startTime) / 1000).toFixed(2);
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                }
+
+                const data = await res.json();
+                
+                responseBox.textContent = JSON.stringify(data, null, 2);
+                execMeta.innerHTML = `
+                    <span style="color:var(--success)">✅ Success</span>
+                    <span>⏱️ ${latency}s</span>
+                `;
+
+            } catch (err) {
+                responseBox.textContent = `❌ Execution Failed:\n\n${err.message}`;
+                execMeta.innerHTML = `<span style="color:var(--error)">❌ Failed</span>`;
+            } finally {
+                sendBtn.disabled = false;
+                btnText.textContent = 'Send Test Request';
+                btnLoader.style.display = 'none';
+            }
+        });
+
+        loadFleetConfig();
+    </script>
+</body>
+</html>

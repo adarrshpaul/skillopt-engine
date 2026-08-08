@@ -17,3 +17,5 @@ projects/
 task_graph.json
 dpo_logs.jsonl
 *.db
+logs/
+checkpoints.json

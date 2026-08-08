@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package worker;
+
+service Worker {
+  rpc Preempt(PreemptRequest) returns (PreemptResponse);
+  rpc Resume(ResumeRequest) returns (ResumeResponse);
+}
+
+message PreemptRequest {
+  string task_id = 1;
+  string progress = 2;
+}
+
+message PreemptResponse {
+  string checkpoint_token = 1;
+}
+
+message ResumeRequest {
+  string checkpoint_token = 1;
+}
+
+message ResumeResponse {
+  string status = 1; // RESUMED, NOT_FOUND, ERROR
+}

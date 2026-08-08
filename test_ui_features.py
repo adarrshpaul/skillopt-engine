@@ -20,7 +20,7 @@ class TestUIFeaturesAndBusinessOntology(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.workspace_dir = Path("/Users/adarrsh/workspace")
-        cls.dashboard_url = "http://localhost:8900"
+        cls.dashboard_url = "http://localhost:5002"
         cls.crawler = WebScraperEngine()
         cls.harness = AgentHarnessV2()
 

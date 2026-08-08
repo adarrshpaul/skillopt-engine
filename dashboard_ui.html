@@ -638,10 +638,18 @@
             <div class="model-selector">
                 <div class="model-card active" data-model="ling-3.0-flash" onclick="selectModel(this, 'ling-3.0-flash', '310 ms', '118.5 tok/s')">
                     <div class="model-header">
-                        <span class="model-title">⚡ Ling-3.0-Flash</span>
+                        <span class="model-title">⚡ Ling-3.0-Flash (Planner)</span>
                         <span class="model-badge">310ms</span>
                     </div>
-                    <span class="model-desc">124B Sparse MoE (5.1B active) • Mooncake</span>
+                    <span class="model-desc">124B Hybrid-Linear MoE (5.1B act) • Ling-mini :8801</span>
+                </div>
+
+                <div class="model-card" data-model="ornith-9b" onclick="selectModel(this, 'ornith-9b', '280 ms', '125.0 tok/s')">
+                    <div class="model-header">
+                        <span class="model-title">🦅 Ornith-9B (Coder)</span>
+                        <span class="model-badge">280ms</span>
+                    </div>
+                    <span class="model-desc">Apple Silicon Offline Coder • MLX :8800</span>
                 </div>
 
                 <div class="model-card" data-model="nanbeige-3b" onclick="selectModel(this, 'nanbeige-3b', '420 ms', '88.3 tok/s')">
@@ -649,23 +657,7 @@
                         <span class="model-title">🪶 Nanbeige 4.2-3B</span>
                         <span class="model-badge">420ms</span>
                     </div>
-                    <span class="model-desc">Looped Transformer • Ultra-Compact</span>
-                </div>
-
-                <div class="model-card" data-model="gemma-4-12b" onclick="selectModel(this, 'gemma-4-12b', '1250 ms', '45.2 tok/s')">
-                    <div class="model-header">
-                        <span class="model-title">🏋️ Gemma 4 12B</span>
-                        <span class="model-badge">1.2s</span>
-                    </div>
-                    <span class="model-desc">Encoder-Free Native Multimodal</span>
-                </div>
-
-                <div class="model-card" data-model="ornith-9b" onclick="selectModel(this, 'ornith-9b', '750 ms', '55.0 tok/s')">
-                    <div class="model-header">
-                        <span class="model-title">🍏 Ornith 1.0-9B</span>
-                        <span class="model-badge">750ms</span>
-                    </div>
-                    <span class="model-desc">Apple Silicon MLX GPU Offline</span>
+                    <span class="model-desc">Looped Transformer • Nanbeige 4bit :8802</span>
                 </div>
             </div>
         </div>
@@ -692,9 +684,15 @@
             <div class="chat-header-title">
                 <span>Autonomous Agent Workspace</span>
             </div>
-            <div class="status-pill">
-                <span class="status-dot"></span>
-                <span id="activeModelStatus">⚡ Ling-3.0-Flash (118.5 tok/s)</span>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button class="mcp-hub-btn" onclick="toggleMCPModal()" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; padding: 6px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;">
+                    <span>🔌 MCP Hub</span>
+                    <span id="mcpBadge" style="background: #6366f1; color: #fff; border-radius: 10px; padding: 1px 6px; font-size: 11px;">2 Active</span>
+                </button>
+                <div class="status-pill">
+                    <span class="status-dot"></span>
+                    <span id="activeModelStatus">⚡ Ling-3.0-Flash (118.5 tok/s) → :8801</span>
+                </div>
             </div>
         </header>
 
@@ -734,7 +732,8 @@
                     <div class="pill-group">
                         <div class="feature-pill" onclick="loadStarter('https://github.com/unclecode/crawl4ai')">🕷️ Crawl URL</div>
                         <div class="feature-pill" onclick="loadStarter('Run test suite on workspace')">🧪 Run Tests</div>
-                        <div class="feature-pill">⚡ Fast MoE</div>
+                        <div class="feature-pill" onclick="loadStarter('test mcp server')">🔌 Test MCP</div>
+                        <div class="feature-pill" onclick="loadStarter('add mcp server calculator')">🛠️ Add MCP</div>
                     </div>
                     <button class="send-btn" id="sendButton" onclick="sendMessage()">➔</button>
                 </div>
@@ -796,7 +795,15 @@ Artifacts and code will render here.
             document.querySelectorAll('.model-card').forEach(c => c.classList.remove('active'));
             card.classList.add('active');
             currentActiveModel = modelKey;
-            document.getElementById('activeModelStatus').innerText = `${card.querySelector('.model-title').innerText} (${speed})`;
+            const backendMap = {
+                'ling-3.0-flash': 'Ling-mini-2.0-4bit :8801',
+                'nanbeige-3b': 'Nanbeige4.1-3B-4bit :8802',
+                'gemma-4-12b': 'Nanbeige4.1-3B-4bit :8802',
+                'ornith-9b': 'Ling-mini-2.0-4bit :8801'
+            };
+            const backend = backendMap[modelKey] || modelKey;
+            document.getElementById('activeModelStatus').innerText =
+                `${card.querySelector('.model-title').innerText} (${speed}) → ${backend}`;
         }
 
         function loadStarter(promptText) {
@@ -861,11 +868,22 @@ Artifacts and code will render here.
             list.scrollTop = list.scrollHeight;
 
             try {
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message, model: currentActiveModel })
-                });
+                let response;
+                try {
+                    response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: message, model: currentActiveModel })
+                    });
+                } catch (firstErr) {
+                    // Retry once after 500ms in case server was restarting
+                    await new Promise(r => setTimeout(r, 500));
+                    response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: message, model: currentActiveModel })
+                    });
+                }
 
                 if (!response.ok) throw new Error("API server responded with error");
                 const data = await response.json();
@@ -979,6 +997,121 @@ Artifacts and code will render here.
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
         }
+
+        // --- MCP SERVER MANAGER MODAL JS ---
+        function toggleMCPModal() {
+            const modal = document.getElementById('mcpModal');
+            if (modal.style.display === 'flex') {
+                modal.style.display = 'none';
+            } else {
+                modal.style.display = 'flex';
+                fetchMCPServers();
+            }
+        }
+
+        async function fetchMCPServers() {
+            try {
+                const res = await fetch('/api/mcp/list');
+                const data = await res.json();
+                const container = document.getElementById('mcpServerList');
+                container.innerHTML = '';
+                
+                if (!data.servers || data.servers.length === 0) {
+                    container.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">No active MCP servers found. Create one below!</div>';
+                    document.getElementById('mcpBadge').innerText = '0 Active';
+                    return;
+                }
+                
+                document.getElementById('mcpBadge').innerText = `${data.servers.length} Active`;
+                data.servers.forEach(srv => {
+                    const div = document.createElement('div');
+                    div.style.cssText = "background: rgba(255,255,255,0.03); border: 1px solid var(--border); padding: 12px; border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;";
+                    div.innerHTML = `
+                        <div>
+                            <strong style="color: #fff; font-size: 14px;">🔌 ${srv.name}_server.py</strong>
+                            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">${srv.path}</div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="testMCPServer('${srv.name}', 'tools/list')" style="background: rgba(99, 102, 241, 0.2); border: 1px solid var(--accent); color: #a5b4fc; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">tools/list</button>
+                            <button onclick="testMCPServer('${srv.name}', 'tools/call', {name: 'add', arguments: {a: 20, b: 30}})" style="background: rgba(16, 185, 129, 0.2); border: 1px solid var(--success); color: #6ee7b7; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">tools/call add</button>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            } catch (err) {
+                console.error("Failed to fetch MCP servers", err);
+            }
+        }
+
+        async function createNewMCPServer() {
+            const input = document.getElementById('newMcpName');
+            const name = input.value.trim();
+            if (!name) return;
+            
+            try {
+                const res = await fetch('/api/mcp/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name })
+                });
+                const data = await res.json();
+                input.value = '';
+                fetchMCPServers();
+                document.getElementById('mcpJsonConsole').innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                alert("Error building MCP server: " + err.message);
+            }
+        }
+
+        async function testMCPServer(name, method, params = {}) {
+            try {
+                const res = await fetch('/api/mcp/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name, method: method, params: params })
+                });
+                const data = await res.json();
+                document.getElementById('mcpJsonConsole').innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                document.getElementById('mcpJsonConsole').innerText = "RPC Error: " + err.message;
+            }
+        }
     </script>
+
+    <!-- MCP SERVER MANAGER MODAL OVERLAY -->
+    <div id="mcpModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: #0f1422; border: 1px solid rgba(255,255,255,0.15); width: 680px; max-width: 90vw; border-radius: 12px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">🔌</span>
+                    <div>
+                        <strong style="font-size: 16px; color: #fff;">Model Context Protocol (MCP) Server Hub</strong>
+                        <div style="font-size: 12px; color: var(--text-secondary);">Register, build, and test stdio JSON-RPC tool servers dynamically.</div>
+                    </div>
+                </div>
+                <button onclick="toggleMCPModal()" style="background: transparent; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer;">✕</button>
+            </div>
+
+            <div>
+                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Add New MCP Server</div>
+                <div style="display: flex; gap: 8px;">
+                    <input id="newMcpName" type="text" placeholder="e.g. calculator, redis_mcp, github_tools..." style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: #fff; padding: 8px 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 13px;">
+                    <button onclick="createNewMCPServer()" style="background: var(--accent); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer;">🛠️ Build & Verify</button>
+                </div>
+            </div>
+
+            <div>
+                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;">Registered MCP Servers</div>
+                <div id="mcpServerList" style="max-height: 180px; overflow-y: auto;">
+                    <!-- Dynamically populated -->
+                </div>
+            </div>
+
+            <div>
+                <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">Live stdio JSON-RPC Console Output</div>
+                <pre id="mcpJsonConsole" style="background: #080b12; border: 1px solid var(--border); padding: 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 12px; color: #38bdf8; max-height: 160px; overflow: auto;">// Click 'tools/list' or 'tools/call' on any server to execute JSON-RPC inspect...</pre>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

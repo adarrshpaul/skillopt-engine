@@ -1,0 +1,1 @@
+{"model_hashes": {"ling": "abc1234", "ornith": "def5678"}, "quantization": "Q5_K_M", "index_type": "IndexFlatL2"}

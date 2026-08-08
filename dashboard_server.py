@@ -441,6 +441,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     f"    print(asyncio.run({func_name}()))\n"
                 )
             
+            # Save the synthesized code physically to the workspace directory
+            target_filepath = os.path.join("/Users/adarrsh/workspace", f"{func_name}.py")
+            try:
+                with open(target_filepath, "w", encoding="utf-8") as f:
+                    f.write(code)
+            except Exception as e:
+                print(f"File save warning: {e}")
+
             resp = {
                 "role": "assistant",
                 "model": profile.display_name,

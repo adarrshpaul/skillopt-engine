@@ -5,11 +5,49 @@ import time
 import subprocess
 import argparse
 import ast
+import logging
+
+os.environ["HF_HUB_OFFLINE"] = "1"
+
+logging.basicConfig(filename="benchmark_trace.log", level=logging.INFO, format="[%(asctime)s] %(message)s")
+
+def log_trace(msg: str):
+    print(f"   [Trace] {msg}", flush=True)
+    logging.info(msg)
 from typing import List, Dict, Any
 from urllib.request import Request, urlopen
 
 # Ling-3.0-Flash (:8801) for Orchestration + Ornith-9B (:8800) for Coding
 import model_router
+from p3_faiss_worker import P3Worker
+import claw_compactor
+
+def compress_text(text: str) -> (str, int):
+    """Compresses text using claw-compactor and returns (compressed_text, tokens_saved)."""
+    try:
+        from claw_compactor.fusion.pipeline import FusionPipeline
+        from claw_compactor.config import PipelineConfig
+        config = PipelineConfig()
+        pipeline = FusionPipeline(config)
+        compressed = pipeline.run(text)
+        
+        # Simple heuristic if exact token counter not present
+        saved = len(text) - len(compressed)
+        # Update tokens_saved metric
+        if saved > 0:
+            ts = 0
+            try:
+                if os.path.exists("tokens_saved.txt"):
+                    with open("tokens_saved.txt", "r") as f:
+                        ts = int(f.read().strip())
+                with open("tokens_saved.txt", "w") as f:
+                    f.write(str(ts + saved))
+            except: pass
+            
+        return compressed, saved
+    except Exception as e:
+        # Graceful fallback
+        return text, 0
 
 PLANNER_URL = model_router.get_url("planner")
 CODER_URL = model_router.get_url("coder")
@@ -20,6 +58,11 @@ PLANNER_MODEL = model_router.get_model("planner")
 CODER_MODEL = model_router.get_model("coder")
 REVIEWER_MODEL = model_router.get_model("reviewer")
 FALLBACK_MODEL = model_router.get_model("fallback")
+
+PLANNER_ENGINE = model_router.get_engine("planner")
+CODER_ENGINE = model_router.get_engine("coder")
+REVIEWER_ENGINE = model_router.get_engine("reviewer")
+FALLBACK_ENGINE = model_router.get_engine("fallback")
 
 DPO_LOG_PATH = os.environ.get("DPO_LOG_PATH", "/Users/adarrsh/workspace/dpo_logs.jsonl")
 
@@ -39,8 +82,14 @@ Do not include markdown code fences or explanatory text.
 """
 
 CODER_SYSTEM_PROMPT = """You are Ornith-9B, an Expert Offline Coding AI on Apple Silicon.
-Generate only valid, clean, self-contained Python code based on the task specification.
-Do not include conversational filler or markdown fences. Output strictly raw executable code.
+Generate valid, clean, self-contained Python code based on the task specification.
+If you need to execute tools to explore the workspace before writing code, you may emit a tool call in XML tags:
+<execute>read_file("path/to/file")</execute>
+<execute>list_dir("path/to/dir")</execute>
+
+You may emit one tool call at a time. The system will return the output, and you can continue.
+When you are ready to write the final code, output the code inside triple backticks (```python).
+Do not include conversational filler.
 """
 
 REVIEWER_SYSTEM_PROMPT = """You are Ling-3.0-Flash acting as a strict Code Reviewer AI.
@@ -56,33 +105,105 @@ If there are only MINOR, RECOMMENDATION, or no issues, respond with "APPROVE" fo
 Do not write the fixed code yourself.
 """
 
-def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name: str = CODER_MODEL, vector: str = None, alpha: float = 1.0, layer: int = 16, max_retries: int = 3) -> str:
-    url = f"{base_url}/chat/completions"
+def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name: str = CODER_MODEL, engine: str = CODER_ENGINE, vector: str = None, alpha: float = 1.0, layer: int = 16, max_retries: int = 3) -> str:
+    if engine == "mlx":
+        log_trace(f"Spawning native MLX inference via mlx_cli.py for {model_name}...")
+        for attempt in range(1, max_retries + 1):
+            start_time = time.time()
+            try:
+                cmd = [
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml-env-311/bin/python"),
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts/mlx_cli.py"),
+                    "--model", model_name,
+                    "--system", system_prompt,
+                    "--prompt", user_prompt
+                ]
+                import signal
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True
+                )
+                try:
+                    stdout, stderr = proc.communicate(timeout=180)
+                    if proc.returncode != 0:
+                        raise subprocess.CalledProcessError(proc.returncode, cmd, stdout, stderr)
+                    res_stdout = stdout
+                except subprocess.TimeoutExpired as e:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    proc.communicate() # wait for it to die
+                    raise e
+                    
+                elapsed = time.time() - start_time
+                resp_text = res_stdout.strip()
+                log_trace(f"Response from {model_name} in {elapsed:.2f}s ({len(resp_text)} chars)")
+                return resp_text
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                elapsed = time.time() - start_time
+                error_msg = getattr(e, 'stderr', str(e))
+                log_trace(f"Attempt {attempt}/{max_retries} MLX CLI failed after {elapsed:.2f}s: {error_msg}")
+                print(f"⚠️ [Attempt {attempt}/{max_retries}] MLX query failed.", flush=True)
+        print(f"❌ [Orchestrator Error] All {max_retries} attempts to contact MLX failed.", flush=True)
+        sys.exit(1)
+        
+    url = base_url.replace("/v1", "") + "/api/generate"
+    qwen_prompt = f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{user_prompt}<|im_end|>\n<|im_start|>assistant\n"
+    
     payload = {
         "model": model_name,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": 0.2,
-        "max_tokens": 1024,
-        "steering_vector": vector,
-        "alpha": alpha,
-        "target_layer": layer
+        "prompt": qwen_prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.2,
+            "num_predict": 1024
+        },
+        "keep_alive": 0
     }
+    
+    if vector:
+        payload["steering_vector"] = vector
+        payload["alpha"] = alpha
+        payload["target_layer"] = layer
+    
+    payload_size = len(json.dumps(payload))
+    log_trace(f"Sending {payload_size} chars to {model_name} at {url}...")
     
     for attempt in range(1, max_retries + 1):
         req = Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+        start_time = time.time()
         try:
-            with urlopen(req, timeout=45) as resp:
+            with urlopen(req, timeout=300) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                return data["choices"][0]["message"]["content"].strip()
+                elapsed = time.time() - start_time
+                resp_text = data.get("response", "").strip()
+                log_trace(f"Response from {model_name} in {elapsed:.2f}s ({len(resp_text)} chars)")
+                
+                # Wait for keep_alive: 0 to actually evict the model
+                ps_url = base_url.replace("/v1", "") + "/api/ps"
+                wait_start = time.time()
+                evicted = False
+                while time.time() - wait_start < 15:
+                    try:
+                        with urlopen(Request(ps_url), timeout=2) as ps_resp:
+                            ps_data = json.loads(ps_resp.read().decode("utf-8"))
+                            if not ps_data.get("models"):
+                                evicted = True
+                                break
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+                
+                if not evicted:
+                    raise RuntimeError("Ollama did not evict the model within 15s")
+                
+                return resp_text
         except Exception as e:
-            print(f"⚠️ [Attempt {attempt}/{max_retries}] Model query timed out or failed ({e}). Retrying in 2s...", flush=True)
-            time.sleep(2)
+            elapsed = time.time() - start_time
+            log_trace(f"Attempt {attempt}/{max_retries} failed after {elapsed:.2f}s: {e}")
+            print(f"⚠️ [Attempt {attempt}/{max_retries}] Model query timed out or failed ({e}).", flush=True)
+            print(f"🛑 FATAL: Hard timeout reached. Exiting immediately to avoid blocking on 16GB RAM constraints.", flush=True)
+            sys.exit(1)
             
     print(f"❌ [Orchestrator Error] All {max_retries} attempts to contact model server failed.", flush=True)
-    return "# Code generation timed out after multiple retries."
+    sys.exit(1)
 
 def log_dpo_pair(prompt: str, rejected: str, chosen: str, error: str):
     entry = {
@@ -126,7 +247,7 @@ def evaluate_code(code: str, desc: str, target_file: str) -> str:
     # 2. Semantic LLM Review
     print(f"   🕵️‍♀️  [Checker] Reviewing code for semantic correctness...", flush=True)
     prompt = f"Task: {desc}\nTarget File: {target_file}\nGenerated Code:\n```python\n{code}\n```\nVerify if this code fulfills the task."
-    review = query_model(REVIEWER_URL, REVIEWER_SYSTEM_PROMPT, prompt, model_name=REVIEWER_MODEL)
+    review = query_model(REVIEWER_URL, REVIEWER_SYSTEM_PROMPT, prompt, model_name=REVIEWER_MODEL, engine=REVIEWER_ENGINE)
     
     if "APPROVE" in review.upper()[:20] or "PASSED" in review.upper()[:20]:
         return "PASSED"
@@ -149,10 +270,37 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
         print(f"   🎛️ Active Steering: Vector='{vector}', Alpha={alpha}, Layer=L{layer}", flush=True)
     print(f"{'='*60}\n", flush=True)
 
+    # Phase 4.1: FAISS Semantic Context Retrieval
+    print("🔍 [0/2] P3 FAISS Worker retrieving workspace context... (SKIPPED FOR 16GB RAM MODE)", flush=True)
+    start_faiss = time.time()
+    context_str = ""
+    # try:
+    #     worker = P3Worker()
+    #     context_docs = worker.query(goal, k=3)
+    #     context_str = "\n".join([f"Context (from {d.get('metadata', {}).get('source', 'unknown')}):\n{d['text']}" for d in context_docs])
+    #     if context_str:
+    #         start_comp = time.time()
+    #         comp_context, saved = compress_text(context_str)
+    #         comp_time = time.time() - start_comp
+    #         log_trace(f"Compactor compressed FAISS context in {comp_time:.2f}s, saved {saved} chars")
+    #         context_str = comp_context
+    #         print(f"   ✅ Retrieved {len(context_docs)} context snippets (Saved {saved} chars via compression).", flush=True)
+    #     else:
+    #         print(f"   ⚠️ No relevant context found.", flush=True)
+    # except Exception as e:
+    #     print(f"   ❌ FAISS Retrieval failed: {e}", flush=True)
+    #     context_str = ""
+    log_trace(f"FAISS Retrieval step skipped (took {time.time() - start_faiss:.2f}s total)")
+
     # Step 1: Planner decomposes goal
-    print("🧠 [1/2] Gemma (Planner) generating task graph...", flush=True)
+    print("🧠 [1/2] Ling-3.0 (Planner) generating task graph...", flush=True)
     print(f"   ↳ backend: {PLANNER_MODEL}", flush=True)
-    planner_response = query_model(PLANNER_URL, PLANNER_SYSTEM_PROMPT, f"User Goal: {goal}", model_name=PLANNER_MODEL, vector=vector, alpha=alpha, layer=layer)
+    
+    full_planner_prompt = f"User Goal: {goal}"
+    if context_str:
+        full_planner_prompt += f"\n\nRetrieved Workspace Context:\n{context_str}\n"
+
+    planner_response = query_model(PLANNER_URL, PLANNER_SYSTEM_PROMPT, full_planner_prompt, model_name=PLANNER_MODEL, engine=PLANNER_ENGINE, vector=vector, alpha=alpha, layer=layer)
     
     if planner_response.startswith("```"):
         planner_response = planner_response.strip("`").removeprefix("json").strip()
@@ -190,7 +338,38 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
         
         for iteration in range(1, max_loop_iterations + 1):
             print(f"   📝 [Maker] Generating code (Attempt {iteration}/{max_loop_iterations})...", flush=True)
-            code = query_model(CODER_URL, CODER_SYSTEM_PROMPT, current_prompt, model_name=CODER_MODEL)
+            
+            # Tool-augmented loop
+            max_tool_calls = 5
+            for tool_iter in range(max_tool_calls):
+                raw_output = query_model(CODER_URL, CODER_SYSTEM_PROMPT, current_prompt, model_name=CODER_MODEL, engine=CODER_ENGINE)
+                
+                if "<execute>" in raw_output:
+                    try:
+                        tool_str = raw_output.split("<execute>")[1].split("</execute>")[0].strip()
+                        print(f"   🛠️  [Tool] Ornith requested: {tool_str}", flush=True)
+                        if not check_command_safety(tool_str):
+                            tool_result = "ERROR: Command blocked by safety floor."
+                        elif tool_str.startswith("read_file"):
+                            filepath = ast.literal_eval(tool_str.split("(", 1)[1].rsplit(")", 1)[0])
+                            with open(filepath, "r") as f:
+                                tool_result = f.read()
+                        elif tool_str.startswith("list_dir"):
+                            dirpath = ast.literal_eval(tool_str.split("(", 1)[1].rsplit(")", 1)[0])
+                            tool_result = "\n".join(os.listdir(dirpath))
+                        else:
+                            tool_result = "ERROR: Unknown tool."
+                        
+                        comp_tool_result, saved = compress_text(tool_result)
+                        if saved > 0:
+                            print(f"   🗜️ Compressed tool output by {saved} chars.", flush=True)
+                        current_prompt += f"\n\nModel emitted:\n{raw_output}\n\nTool Result:\n{comp_tool_result}"
+                    except Exception as e:
+                        print(f"   ❌ Tool execution error: {e}", flush=True)
+                        current_prompt += f"\n\nModel emitted:\n{raw_output}\n\nTool Error: {e}"
+                else:
+                    code = raw_output
+                    break
             
             if code.startswith("```"):
                 lines = code.splitlines()

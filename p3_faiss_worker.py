@@ -13,7 +13,7 @@ EMBED_MODEL = "all-MiniLM-L6-v2"  # small embedder
 class P3Worker:
     def __init__(self, dim=384):
         self.dim = dim
-        self.model = SentenceTransformer(EMBED_MODEL)
+        self.model = SentenceTransformer(EMBED_MODEL, device="cpu")
         self._ensure_db()
         if os.path.exists(INDEX_FILE):
             self.index = faiss.read_index(INDEX_FILE)

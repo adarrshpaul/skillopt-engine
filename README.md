@@ -48,6 +48,14 @@ Instead of relying on cloud APIs or attempting to load massive models concurrent
 
 ---
 
+## ABC-Bench Dual-Container Architecture
+
+For advanced benchmarks like **ABC-Bench** that require heavy backend deployment (which would normally crush a 16GB Mac), we have introduced a **Dual-Container Cloud-Hybrid Architecture**. 
+
+Please see the [Free-Tier Cloud Sandboxes Guide](FREE_TIER_SANDBOXES.md) for full instructions on how to configure `terminal-bench` with remote Docker hosts like GitHub Codespaces, Gitpod, and E2B.
+
+---
+
 ## Getting Started
 
 ### Prerequisites

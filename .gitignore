@@ -19,3 +19,8 @@ dpo_logs.jsonl
 *.db
 logs/
 checkpoints.json
+ABC-Bench-Dataset/
+tb-env/
+skillopt-env/
+runs/
+

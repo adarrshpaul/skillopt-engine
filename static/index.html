@@ -90,7 +90,10 @@
             // Fleet state
             const [fleet, setFleet] = useState(null);
 
-            // Fetch Telemetry on tab switch & interval
+            // Performance state
+            const [performanceData, setPerformanceData] = useState(null);
+
+            // Fetch Telemetry & Performance on tab switch & interval
             useEffect(() => {
                 const fetchTelemetry = async () => {
                     try {
@@ -101,10 +104,42 @@
                         }
                     } catch (e) {}
                 };
+                const fetchPerformance = async () => {
+                    try {
+                        const res = await fetch('/api/performance');
+                        if (res.ok) {
+                            const data = await res.json();
+                            setPerformanceData(data);
+                        }
+                    } catch (e) {}
+                };
+                
                 fetchTelemetry();
-                const interval = setInterval(fetchTelemetry, 3000);
+                fetchPerformance();
+                
+                const interval = setInterval(() => {
+                    fetchTelemetry();
+                    fetchPerformance();
+                }, 3000);
                 return () => clearInterval(interval);
             }, []);
+
+            const handleFleetAction = async (port, action) => {
+                try {
+                    await fetch(`/api/fleet/${action}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({port: port})
+                    });
+                    // Instantly fetch performance to reflect UI change
+                    const res = await fetch('/api/performance');
+                    if (res.ok) {
+                        setPerformanceData(await res.json());
+                    }
+                } catch (e) {
+                    console.error("Fleet action failed", e);
+                }
+            };
 
             // Fetch Files & Interactions
             useEffect(() => {
@@ -317,6 +352,12 @@
                                 className={`px-4 py-1.5 rounded-md font-medium transition-all ${activeTab === 'fleet' ? 'bg-brand-accent text-white shadow' : 'text-gray-400 hover:text-white'}`}
                             >
                                 🎛️ Model Fleet
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('performance')}
+                                className={`px-4 py-1.5 rounded-md font-medium transition-all ${activeTab === 'performance' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-emerald-400'}`}
+                            >
+                                📈 Performance & Memory
                             </button>
                         </div>
 
@@ -545,6 +586,88 @@
                                         ))}
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Tab 5: Performance Dashboard */}
+                    {activeTab === 'performance' && (
+                        <div className="flex-1 p-8 overflow-y-auto bg-brand-900 space-y-6">
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                📈 Performance Dashboard
+                            </h2>
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="bg-brand-800 p-6 rounded-xl border border-emerald-500/50 shadow flex items-center justify-between">
+                                    <div>
+                                        <div className="text-xs text-gray-400 font-semibold uppercase">Total LLM VRAM/RAM Usage</div>
+                                        <div className="text-4xl font-bold text-emerald-400 mt-2">
+                                            {performanceData?.fleet ? performanceData.fleet.reduce((acc, curr) => acc + curr.memory_mb, 0).toFixed(0) : '0'} 
+                                            <span className="text-sm font-normal text-gray-400 ml-1">MB</span>
+                                        </div>
+                                    </div>
+                                    <svg className="w-12 h-12 text-emerald-500/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                </div>
+                                <div className="bg-brand-800 p-6 rounded-xl border border-brand-700/80 shadow flex items-center justify-between">
+                                    <div>
+                                        <div className="text-xs text-gray-400 font-semibold uppercase">Tokens Saved (claw-compactor)</div>
+                                        <div className="text-4xl font-bold text-blue-400 mt-2">
+                                            {performanceData?.tokens_saved || 0}
+                                        </div>
+                                    </div>
+                                    <svg className="w-12 h-12 text-blue-500/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-brand-800 rounded-xl border border-brand-700/80 p-6 shadow">
+                                <h3 className="text-base font-semibold text-white mb-4">MLX Fleet Process Metrics</h3>
+                                {(!performanceData || !performanceData.fleet || performanceData.fleet.length === 0) ? (
+                                    <div className="text-gray-500 text-sm py-4 text-center">No MLX fleet processes detected running on ports 8800-8802.</div>
+                                ) : (
+                                    <table className="w-full text-left text-sm">
+                                        <thead>
+                                            <tr className="text-gray-400 border-b border-brand-700 text-xs uppercase">
+                                                <th className="py-3">Role</th>
+                                                <th className="py-3">PID</th>
+                                                <th className="py-3">Port</th>
+                                                <th className="py-3">Memory Footprint</th>
+                                                <th className="py-3 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {performanceData.fleet.map((proc) => (
+                                                <tr key={proc.port} className="border-b border-brand-700/50 text-gray-200">
+                                                    <td className="py-3 font-semibold uppercase text-brand-accent">{proc.role}</td>
+                                                    <td className="py-3 font-mono text-xs text-gray-400">{proc.pid}</td>
+                                                    <td className="py-3 font-mono text-xs">{proc.port}</td>
+                                                    <td className="py-3 font-mono text-xs text-amber-400">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-24 h-2 bg-brand-900 rounded-full overflow-hidden">
+                                                                <div className="h-full bg-amber-400" style={{width: `${Math.min(100, (proc.memory_mb / 8000) * 100)}%`}}></div>
+                                                            </div>
+                                                            {proc.memory_mb} MB
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 text-right flex justify-end gap-2">
+                                                        <button 
+                                                            onClick={() => handleFleetAction(proc.port, 'restart')}
+                                                            className="px-3 py-1 bg-brand-700 hover:bg-brand-600 text-white rounded text-xs transition-colors"
+                                                            title="Restart Model"
+                                                        >
+                                                            🔄 Restart
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleFleetAction(proc.port, 'kill')}
+                                                            className="px-3 py-1 bg-red-900/50 hover:bg-red-800 text-red-200 rounded text-xs transition-colors border border-red-800/50"
+                                                            title="Stop Model"
+                                                        >
+                                                            ⏹️ Stop
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
                             </div>
                         </div>
                     )}

@@ -13,6 +13,8 @@ from proto import worker_pb2, worker_pb2_grpc
 import model_router
 from urllib.request import Request, urlopen
 import json
+import psutil
+import subprocess
 
 app = FastAPI()
 
@@ -116,6 +118,60 @@ def api_resume(req: ResumeRequest):
         status = f"error: {str(e)}"
     
     return {"status": status}
+
+@app.get("/api/performance")
+def api_performance():
+    fleet_metrics = []
+    target_ports = {8800: "coder", 8801: "planner", 8802: "nanbeige"}
+    
+    try:
+        for conn in psutil.net_connections(kind='inet'):
+            if conn.laddr.port in target_ports and conn.status == 'LISTEN':
+                try:
+                    proc = psutil.Process(conn.pid)
+                    rss_mb = proc.memory_info().rss / (1024 * 1024)
+                    fleet_metrics.append({
+                        "port": conn.laddr.port,
+                        "role": target_ports[conn.laddr.port],
+                        "pid": proc.pid,
+                        "memory_mb": round(rss_mb, 2),
+                        "status": "online"
+                    })
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+    except psutil.AccessDenied:
+        pass
+        
+    tokens_saved = 0
+    if os.path.exists("tokens_saved.txt"):
+        with open("tokens_saved.txt", "r") as f:
+            tokens_saved = int(f.read().strip())
+            
+    return {
+        "fleet": fleet_metrics,
+        "tokens_saved": tokens_saved
+    }
+
+class FleetActionRequest(BaseModel):
+    port: int
+
+@app.post("/api/fleet/kill")
+def api_fleet_kill(req: FleetActionRequest):
+    try:
+        subprocess.run(["python", "scripts/resource_manager.py", "--port", str(req.port)], check=True)
+        return {"status": "success", "message": f"Killed process on port {req.port}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/fleet/restart")
+def api_fleet_restart(req: FleetActionRequest):
+    try:
+        subprocess.run(["python", "scripts/resource_manager.py", "--port", str(req.port)], check=True)
+        # Restart script which will only start models not currently bound to ports
+        subprocess.Popen(["./start_mlx_fleet.sh"], start_new_session=True)
+        return {"status": "success", "message": f"Restarting fleet for port {req.port}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # Ensure static directory exists
 static_dir = "/Users/adarrsh/workspace/static"

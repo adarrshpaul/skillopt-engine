@@ -1,0 +1,29 @@
+{
+  "goal": "Add a tracking flag to autoreload to track changes in manage.py. This should automatically restart the server when manage.py is edited.",
+  "tasks": [
+    {
+      "step_id": 1,
+      "description": "Modify the autoreload module to include a tracking flag for manage.py changes.",
+      "target_file": "autoreload.py",
+      "test_cmd": "python -m py_compile autoreload.py"
+    },
+    {
+      "step_id": 2,
+      "description": "Update the server management script (e.g., manage.py) to use the new tracking flag.",
+      "target_file": "manage.py",
+      "test_cmd": "python manage.py runserver --help | grep -- '--track-changes'"
+    },
+    {
+      "step_id": 3,
+      "description": "Implement file change monitoring logic in the autoreload module to detect edits to manage.py and trigger server restart.",
+      "target_file": "autoreload.py",
+      "test_cmd": "python -m py_compile autoreload.py"
+    },
+    {
+      "step_id": 4,
+      "description": "Add command-line argument parsing to manage.py to accept the --track-changes flag and pass it to the server.",
+      "target_file": "manage.py",
+      "test_cmd": "python manage.py runserver --help | grep -- '--track-changes'"
+    }
+  ]
+}

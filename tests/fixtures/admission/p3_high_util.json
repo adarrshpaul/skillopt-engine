@@ -1,0 +1,16 @@
+{
+  "description": "P3 background job throttled under high CPU utilization",
+  "setup": {
+    "cpu_util": 0.85,
+    "throttled": true
+  },
+  "input": {
+    "request_id": "test-p3-high",
+    "priority": 3,
+    "payload": "faiss index"
+  },
+  "expected": {
+    "action": "reject",
+    "code": "P3_THROTTLED"
+  }
+}

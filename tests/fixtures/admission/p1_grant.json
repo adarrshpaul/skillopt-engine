@@ -1,0 +1,12 @@
+{
+  "description": "P1 interactive request with available tokens",
+  "input": {
+    "request_id": "test-p1-grant",
+    "priority": 1,
+    "payload": "hello world"
+  },
+  "expected": {
+    "action": "start",
+    "reason": "token"
+  }
+}

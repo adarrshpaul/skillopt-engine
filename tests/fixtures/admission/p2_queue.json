@@ -1,0 +1,11 @@
+{
+  "description": "P2 planner task queued successfully",
+  "input": {
+    "request_id": "test-p2-queue",
+    "priority": 2,
+    "payload": "plan ecommerce"
+  },
+  "expected": {
+    "action": "queued"
+  }
+}

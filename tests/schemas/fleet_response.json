@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FleetResponse",
+  "description": "Schema for /api/fleet response",
+  "type": "object",
+  "required": [
+    "roles"
+  ],
+  "properties": {
+    "roles": {
+      "type": "object",
+      "required": [
+        "planner",
+        "reviewer",
+        "coder",
+        "fallback"
+      ],
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "model",
+          "url",
+          "role_description"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "role_description": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

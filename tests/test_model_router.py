@@ -5,12 +5,12 @@ class TestModelRouter(unittest.TestCase):
     def test_ornith_routes_to_coder_port(self):
         url = model_router.get_url("coder")
         self.assertIn(":8800", url)
-        self.assertEqual(model_router.get_model("coder"), "ornith-9b")
+        self.assertEqual(model_router.get_model("coder"), "AtomicChat/Ornith-9B-MLX-6bit")
 
     def test_ling_routes_to_planner_port(self):
         url = model_router.get_url("planner")
         self.assertIn(":8801", url)
-        self.assertEqual(model_router.get_model("planner"), "inclusionAI/Ling-3.0-flash")
+        self.assertEqual(model_router.get_model("planner"), "mlx-community/Ling-mini-2.0-4bit")
 
     def test_reviewer_uses_ling(self):
         model = model_router.get_model("reviewer")

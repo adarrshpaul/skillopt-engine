@@ -1,135 +1,60 @@
-# Local AI Research Stack
+# SkillOpt Engine
 
-**What this repo provides**
+The SkillOpt Engine is a disciplined, Claude Code Harness-inspired governance framework for multi-agent coding workflows. It provides strict routing, safety guarantees, and evidentiary test pipelines for running local AI models on Apple Silicon.
 
-- **Admission controller**: FastAPI UI + gRPC admission service implementing P1 token bucket, P2 FIFO with preemption, P3 opportunistic scheduler.
-- **P2 worker**: gRPC worker with `Preempt` and `Resume` endpoints; atomic checkpoint persistence to `checkpoints.json`.
-- **P3 worker**: FAISS `IndexIDMap` + SQLite metadata for real vector indexing and queries.
-- **Test harness**: `loadgen.py` and `latency_probe.py` for noisy neighbor and latency validation.
-- **Makefile**: reproducible build, run, and test commands.
+## Core Architecture
 
----
+### 1. The Orchestrator (`orchestrator.py`)
+- **Multi-Agent Routing**: Uses `Ling-3.0` (Port `:8801`) as the "Planner" and "Reviewer" subagents, while `Ornith-9B` (Port `:8800`) executes "Coder" tasks.
+- **Severity-Tiered Review Loop**: Implements a strict Maker-Checker loop with granular severity tiers (`CRITICAL`, `MAJOR`, `MINOR`, `RECOMMENDATION`). Fixes loop up to 3 times before escalating.
+- **Runtime Safety Floor**: Hard boundaries prevent destructive commands (`rm -rf`, `mkfs`) or unbounded network egress (`curl`, `wget`) from being executed by generated code. Workspaces are fully bounded.
+- **Evidentiary Output**: Automatically generates a `completion_report.md` ledger at the end of execution to provide proof of validation.
 
-## Prerequisites
+### 2. Fleet & Model Management
+- **Master Cockpit**: A centralized UI and API at `:5002` that tracks real-time model telemetry, token consumption, and P1/P2/P3 queue health.
+- **Centralized Router (`model_router.py`)**: Single source of truth for mapping AI roles (planner, reviewer, coder, fallback) to active endpoints.
 
-- **OS**: Linux or macOS
-- **Docker** and **docker-compose**
-- **Python 3.9+** for local runs
-- **pip** for installing Python dev dependencies
-- Ports used:
-  - **5001** FastAPI UI (Note: Port 5000 is used by macOS AirPlay)
-  - **50051** gRPC admission
-  - **50052** gRPC P2 worker
-  - **8001** Prometheus metrics
+### 3. Admission Controller
+A gRPC-based priority queue handling requests across the fleet:
+- **P1 (Interactive)**: High-priority token bucket for user interactions.
+- **P2 (Planner Tasks)**: FIFO queue for complex task execution, with preemption capabilities.
+- **P3 (Background)**: Opportunistic scheduling for tasks like FAISS vector indexing, dynamically throttled based on CPU utilization.
 
 ---
 
-## Quickstart using Docker Compose
+## Getting Started
 
-1. **Build and start everything**
-   ```bash
-   make up
-   ```
-   *or to build images first:*
-   ```bash
-   make build
-   make up
-   ```
+### Prerequisites
+- macOS (Apple Silicon optimized) or Linux
+- Python 3.11+
+- `uv` or `pip` for dependency management
 
-2. **Open the UI**
-   Visit `http://localhost:5001` to view the admission controller dashboard.
-
-3. **Metrics**
-   Prometheus metrics are exposed at `http://localhost:8001/`.
-
-4. **Stop**
-   ```bash
-   make down
-   ```
-
-## Run locally without Docker for development
-
-1. **Generate gRPC code**
-   ```bash
-   make gen-protos
-   ```
-
-2. **Start services in separate terminals or background**
-   ```bash
-   # Terminal 1
-   ./ml-env/bin/python p2_worker_stub.py
-
-   # Terminal 2
-   ./ml-env/bin/python p3_faiss_worker.py
-
-   # Terminal 3
-   ./ml-env/bin/python admission_controller_grpc.py
-   ```
-   Visit `http://localhost:5001` for the UI.
-
-## Test and validate
-
-### 1. P1 latency SLO
-Run the latency probe for P1:
+### Installation & System Validation
+Run the system validation script to ensure all components and models are properly wired:
 ```bash
-make test-latency
+./tests/validate-system.sh
 ```
-**Success criteria**: P50 < 200ms, P95 < 1s under light load.
+This script runs a 36-point pre-flight check across services, schema boundaries, test fixtures, and ports.
 
-### 2. Noisy neighbor resilience
-Run a P3 noisy load and measure P1 latency concurrently:
+### Running Tests
+The testing framework uses JSON fixtures to strictly validate the admission controller and API schemas. 
 ```bash
-# Start noisy P3 load
-make test-noisy
+# Install dependencies
+pip install pytest faiss-cpu sentence-transformers
 
-# In another terminal run P1 probe
-make test-latency
-```
-**Success criteria**: P1 latency remains within SLOs. No OOMs for Ling-like services if configured.
-
-### 3. Preemption and checkpoint resume
-Enqueue many P2 tasks:
-```bash
-./ml-env/bin/python loadgen.py --qps 20 --duration 60 --priority 2
-```
-Trigger P1 burst to force preemption:
-```bash
-./ml-env/bin/python loadgen.py --qps 50 --duration 30 --priority 1
-```
-Inspect checkpoint file:
-```bash
-ls -l checkpoints.json
-cat checkpoints.json
-```
-Resume a checkpoint via the P2 worker gRPC `Resume` endpoint or by restarting the worker and calling the resume flow.
-
-**Success criteria**: `checkpoints.json` contains checkpoint tokens and metadata. Resume returns `RESUMED` and task completes.
-
-## Logs and troubleshooting
-Tail logs for all services:
-```bash
-make logs
+# Run the full test suite
+python -m pytest tests/ -v
 ```
 
-**Common issues**
-- **gRPC import errors**: ensure `proto/*_pb2.py` and `proto/*_pb2_grpc.py` exist. Run `make gen-protos`.
-- **Port conflicts**: ensure ports 5001, 50051, 50052, 8001 are free.
-- **FAISS errors**: install faiss-cpu compatible with your Python version.
-- **Checkpoint file missing**: ensure checkpoints are written in the working directory.
+---
 
-## Next steps and recommended improvements
-- Add TLS and mTLS for gRPC channels.
-- Persist checkpoints to a durable store for multi-host resilience.
-- Add Grafana dashboard JSON and Prometheus alert rules for SLO violations.
-- Replace local FAISS with a managed vector DB for scale.
+## Directory Structure
+- `orchestrator.py` - Main entry point for the Multi-Agent Loop
+- `master_cockpit.py` - UI and Telemetry engine
+- `model_router.py` - Single source of truth for AI role mappings
+- `admission_controller_grpc.py` - Core traffic shaping logic
+- `tests/` - Comprehensive fixture-based and API schema tests
+- `proto/` - gRPC definitions for the fleet
 
-## Useful Makefile commands
-- `make gen-protos` generate gRPC code
-- `make build` build docker images
-- `make up` start stack with docker-compose
-- `make down` stop stack
-- `make logs` tail logs
-- `make test-noisy` run P3 noisy load
-- `make test-latency` run P1 latency probe
-- `make run-local` run services locally without Docker
-- `make demo` run the automated research snapshot demo
+## License
+MIT License

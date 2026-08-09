@@ -1,0 +1,15 @@
+{
+  "description": "P2 queue at max capacity rejects",
+  "setup": {
+    "queue_full": true
+  },
+  "input": {
+    "request_id": "test-p2-full",
+    "priority": 2,
+    "payload": "plan"
+  },
+  "expected": {
+    "action": "reject",
+    "code": "P2_QUEUE_FULL"
+  }
+}

@@ -113,6 +113,8 @@
                     fetch('/api/interactions').then(r => r.json()).then(d => setInteractions(d || [])).catch(() => {});
                 } else if (activeTab === 'fleet') {
                     fetch('/api/fleet').then(r => r.json()).then(d => setFleet(d)).catch(() => {});
+                } else if (activeTab === 'telemetry') {
+                    fetch('/api/interactions').then(r => r.json()).then(d => setInteractions(d || [])).catch(() => {});
                 }
             }, [activeTab]);
 
@@ -457,6 +459,36 @@
                                                     <td className="py-3">
                                                         <button onClick={() => handleResume(t.checkpoint_token)} className="bg-indigo-600 px-3 py-1 rounded text-white text-xs">Resume</button>
                                                     </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+
+                            <div className="bg-brand-800 rounded-xl border border-brand-700/80 p-6 mt-6">
+                                <h3 className="text-base font-semibold text-white mb-4">Hardware Utilization & LLM Processing</h3>
+                                {interactions.length === 0 ? (
+                                    <div className="text-gray-500 text-sm py-4 text-center">No LLM processing records available</div>
+                                ) : (
+                                    <table className="w-full text-left text-sm">
+                                        <thead>
+                                            <tr className="text-gray-400 border-b border-brand-700 text-xs uppercase">
+                                                <th className="py-2">Timestamp</th>
+                                                <th className="py-2">Prompt Excerpt</th>
+                                                <th className="py-2">Tokens Processed</th>
+                                                <th className="py-2">Latency (ms)</th>
+                                                <th className="py-2">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {interactions.slice(0, 10).map((t, idx) => (
+                                                <tr key={idx} className="border-b border-brand-700/50 text-gray-200 font-mono text-xs">
+                                                    <td className="py-3 text-gray-400">{new Date(t.timestamp * 1000).toLocaleTimeString()}</td>
+                                                    <td className="py-3 truncate max-w-xs">{t.task_prompt.length > 40 ? t.task_prompt.substring(0, 40) + '...' : t.task_prompt}</td>
+                                                    <td className="py-3 text-emerald-400 font-bold">{t.tokens || 0}</td>
+                                                    <td className="py-3 text-amber-400">{t.latency_ms ? t.latency_ms.toFixed(2) : '0.00'} ms</td>
+                                                    <td className="py-3 text-indigo-400">{t.status}</td>
                                                 </tr>
                                             ))}
                                         </tbody>

@@ -1,0 +1,14 @@
+{
+  "description": "P3 background job admitted under low CPU utilization",
+  "setup": {
+    "cpu_util": 0.3
+  },
+  "input": {
+    "request_id": "test-p3-low",
+    "priority": 3,
+    "payload": "faiss index"
+  },
+  "expected": {
+    "action": "scheduled"
+  }
+}

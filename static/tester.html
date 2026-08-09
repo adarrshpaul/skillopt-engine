@@ -372,7 +372,20 @@
             sendBtn.disabled = true;
             btnText.textContent = 'Executing...';
             btnLoader.style.display = 'block';
-            responseBox.textContent = 'Transmitting request to Admission Controller...\n\nWaiting for inference generation. This may take up to 60-90 seconds for large models...';
+
+            const priorityLabel = reqPriority.options[reqPriority.selectedIndex].text;
+            
+            // Replicate the Cockpit's basic NLP routing logic to show the user what's happening
+            const isCodingQuery = ["code", "script", "function", "implement", "debug", "python", "html", "javascript"].some(w => text.toLowerCase().includes(w));
+            const expectedRole = isCodingQuery ? "coder (Ornith)" : "planner (Ling)";
+            
+            responseBox.innerHTML = `<span style="color:var(--text-primary)">[DEBUG] Initiating Request...</span>\n\n` + 
+                                    `→ <b>Endpoint:</b> POST /api/chat\n` +
+                                    `→ <b>Priority:</b> ${priorityLabel}\n` +
+                                    `→ <b>Target LLM:</b> ${expectedRole}\n` +
+                                    `→ <b>Timeout:</b> 120 seconds\n\n` +
+                                    `<span style="color:var(--text-secondary)">Transmitting request to Admission Controller...\n` +
+                                    `Waiting for inference generation. This may take up to 60-90 seconds for large models...</span>`;
             execMeta.innerHTML = '';
             
             const startTime = performance.now();

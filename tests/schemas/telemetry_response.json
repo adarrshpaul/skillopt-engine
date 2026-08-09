@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TelemetryResponse",
+  "description": "Schema for /api/telemetry response",
+  "type": "object",
+  "required": [
+    "p1_tokens",
+    "p2_queue_length",
+    "p3_pending_jobs",
+    "total_preemptions",
+    "preempted_tasks"
+  ],
+  "properties": {
+    "p1_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "p2_queue_length": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "p3_pending_jobs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "total_preemptions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "preempted_tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "checkpoint_token"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "checkpoint_token": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "P1 request with zero tokens and zero preempt budget",
+  "setup": {
+    "tokens": 0,
+    "preempt_budget": 0
+  },
+  "input": {
+    "request_id": "test-p1-exhaust",
+    "priority": 1,
+    "payload": "hello"
+  },
+  "expected": {
+    "action": "reject",
+    "code": "P1_RATE_LIMIT"
+  }
+}

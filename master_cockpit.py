@@ -60,6 +60,10 @@ def init_projects_db():
         code_output TEXT,
         timestamp REAL
     )""")
+    try:
+        cur.execute("ALTER TABLE interactions ADD COLUMN tokens INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -112,6 +116,10 @@ def api_chat(req: ChatRequest):
     )
     
     try:
+        import time
+        start_time = time.time()
+        total_tokens = 0
+        
         payload = {
             "model": model_name,
             "messages": [
@@ -128,6 +136,8 @@ def api_chat(req: ChatRequest):
                 llm_response = data["choices"][0]["message"]["content"].strip()
             else:
                 llm_response = data.get("text", "").strip()
+            if "usage" in data:
+                total_tokens = data["usage"].get("total_tokens", 0)
     except Exception as err:
         # Fallback to secondary role endpoint if primary is down
         fallback_role = "coder" if role == "planner" else "planner"
@@ -142,13 +152,25 @@ def api_chat(req: ChatRequest):
                     llm_response = data["choices"][0]["message"]["content"].strip()
                 else:
                     llm_response = data.get("text", "").strip()
+                if "usage" in data:
+                    total_tokens = data["usage"].get("total_tokens", 0)
                 model_name = fallback_model
         except Exception:
             raise HTTPException(
                 status_code=503,
                 detail=f"Model Inference Server Offline ({endpoint_url} / {model_name}). Please start the model server via 'make run-local' or 'python steer_server.py'. Zero mocks allowed in production."
             )
+    latency_ms = (time.time() - start_time) * 1000
     
+    try:
+        conn = sqlite3.connect(PROJECTS_DB)
+        cur = conn.cursor()
+        cur.execute("INSERT INTO interactions (task_prompt, status, latency_ms, code_output, timestamp, tokens) VALUES (?, ?, ?, ?, ?, ?)", (req.text, "completed", latency_ms, llm_response, time.time(), total_tokens))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"DB Error: {e}", flush=True)
+
     # 3. Save prompt and response to graph store
     graph_store.add_node(
         node_id=prompt_node_id,
@@ -175,7 +197,10 @@ def api_chat(req: ChatRequest):
     return {
         "node_id": response_node_id,
         "action": action,
-        "reason": reason
+        "reason": reason,
+        "content": llm_response,
+        "tokens": total_tokens,
+        "latency_ms": latency_ms
     }
 
 @app.get("/api/graph")
@@ -241,12 +266,12 @@ def get_projects():
 def get_interactions():
     conn = sqlite3.connect(PROJECTS_DB)
     cur = conn.cursor()
-    cur.execute("SELECT id, task_prompt, status, latency_ms, code_output, timestamp FROM interactions ORDER BY timestamp DESC LIMIT 50")
+    cur.execute("SELECT id, task_prompt, status, latency_ms, code_output, timestamp, tokens FROM interactions ORDER BY timestamp DESC LIMIT 50")
     rows = cur.fetchall()
     conn.close()
     return [{
         "id": r[0], "task_prompt": r[1], "status": r[2],
-        "latency_ms": r[3], "code_output": r[4], "timestamp": r[5]
+        "latency_ms": r[3], "code_output": r[4], "timestamp": r[5], "tokens": r[6]
     } for r in rows]
 
 @app.get("/api/mcts_tree")

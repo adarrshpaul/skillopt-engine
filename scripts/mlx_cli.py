@@ -5,6 +5,14 @@ import time
 
 try:
     from mlx_lm import load, generate
+    import mlx.core as mx
+    # Enforce strict 8GB memory caps to prevent kernel panics on 16GB machines
+    if hasattr(mx, 'set_wired_limit'): 
+        mx.set_wired_limit(8 * 1024 * 1024 * 1024)
+        mx.set_cache_limit(8 * 1024 * 1024 * 1024)
+    else:
+        mx.metal.set_wired_limit(8 * 1024 * 1024 * 1024)
+        mx.metal.set_cache_limit(8 * 1024 * 1024 * 1024)
 except ImportError:
     print("ERROR: mlx_lm is not installed in the current environment.", file=sys.stderr)
     sys.exit(1)
@@ -40,6 +48,14 @@ def main():
     except Exception as e:
         # Fallback if tokenizer lacks template
         full_prompt = f"{args.system}\n\n{args.prompt}" if args.system else args.prompt
+        
+    # KV Cache Safeguard: Hard limit on prompt length to avoid blowing out 8GB RAM
+    MAX_PROMPT_CHARS = 12000 * 4 # rough estimate for 12k tokens
+    if len(full_prompt) > MAX_PROMPT_CHARS:
+        print(f"WARNING: Prompt length ({len(full_prompt)} chars) exceeds safe KV cache bounds. Truncating...", file=sys.stderr)
+        head = full_prompt[:MAX_PROMPT_CHARS // 2]
+        tail = full_prompt[-MAX_PROMPT_CHARS // 2:]
+        full_prompt = head + "\n\n...[TRUNCATED FOR MEMORY SAFETY]...\n\n" + tail
         
     try:
         response = generate(

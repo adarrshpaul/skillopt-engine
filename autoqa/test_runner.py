@@ -17,9 +17,22 @@ class MemoryTracker:
         self.max_api_size = 0
         self.initial_swap = self._get_swap_usage()
         self.initial_wired = self._get_wired_pages()
+        self.initial_compressor = self._get_compressor_pages()
         self.max_pressure = self._get_pressure_level()
+        self.peak_compressor = self.initial_compressor
         self.running = False
         self.thread = None
+
+    def _get_compressor_pages(self) -> int:
+        """Returns macOS pages occupied by compressor."""
+        try:
+            output = subprocess.check_output(["vm_stat"], text=True)
+            for line in output.splitlines():
+                if "Pages occupied by compressor" in line:
+                    return int(line.split(":")[1].strip().strip("."))
+        except Exception:
+            return 0
+        return 0
 
     def _get_swap_usage(self) -> int:
         """Returns macOS pages swapped out (from vm_stat)."""
@@ -107,9 +120,24 @@ class MemoryTracker:
                 self.overlap_detected = True
             
             pressure = self._get_pressure_level()
-            if pressure != "unknown" and self.max_pressure != "critical":
-                if pressure == "critical" or (pressure == "warn" and self.max_pressure == "normal"):
+            if pressure != "unknown":
+                if pressure in ("warn", "critical"):
+                    print(f"\n🚨 [CIRCUIT BREAKER] macOS Memory Pressure hit '{pressure.upper()}'. Aborting test to prevent kernel panic!", flush=True)
+                    for pid in pids:
+                        try:
+                            import signal
+                            os.killpg(os.getpgid(pid), signal.SIGKILL)
+                        except Exception:
+                            pass
                     self.max_pressure = pressure
+                    self.running = False
+                    break
+                elif self.max_pressure != "critical":
+                    if pressure == "critical" or (pressure == "warn" and self.max_pressure == "normal"):
+                        self.max_pressure = pressure
+                        
+            cur_compressor = self._get_compressor_pages()
+            self.peak_compressor = max(self.peak_compressor, cur_compressor)
 
             time.sleep(0.5)
 
@@ -131,9 +159,11 @@ class MemoryTracker:
             "ornith_peak_rss_mb": self.ornith_peak_rss / (1024 * 1024),
             "overlap_detected": self.overlap_detected,
             "max_api_size_mb": self.max_api_size / (1024 * 1024),
-            "swap_pages_delta": max(0, current_swap - self.initial_swap),
-            "wired_pages_delta": current_wired - self.initial_wired,
-            "max_memory_pressure": self.max_pressure
+            "swap_delta_pages": max(0, current_swap - self.initial_swap),
+            "wired_delta_pages": current_wired - self.initial_wired,
+            "max_pressure_level": self.max_pressure,
+            "peak_compressor_pages": self.peak_compressor,
+            "initial_compressor_pages": self.initial_compressor
         }
 
 def run_suite():
@@ -170,9 +200,10 @@ def run_suite():
     print(f"📊 Ling-mini Peak RSS: {metrics['ling_peak_rss_mb']:.2f} MB")
     print(f"📊 Ornith Peak RSS: {metrics['ornith_peak_rss_mb']:.2f} MB (API reported: {metrics['max_api_size_mb']:.2f} MB)")
     print(f"🚨 Concurrent Overlap Detected: {metrics['overlap_detected']}")
-    print(f"🔄 Swap Delta: {metrics['swap_pages_delta']} pages")
-    print(f"📌 Wired Delta: {metrics['wired_pages_delta']} pages")
-    print(f"🚨 Max Pressure: {metrics['max_memory_pressure']}")
+    print(f"🔄 Swap Delta: {metrics['swap_delta_pages']} pages")
+    print(f"📌 Wired Delta: {metrics['wired_delta_pages']} pages")
+    print(f"🚨 Max Pressure: {metrics['max_pressure_level']}")
+    print(f"🗜️ Peak Compressor Pages: {metrics['peak_compressor_pages']} (Start: {metrics['initial_compressor_pages']})")
     
     if metrics['overlap_detected']:
         print("🛑 FATAL: Engine Swap Failed! Concurrent memory overlap detected.", flush=True)

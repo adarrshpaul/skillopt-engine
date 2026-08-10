@@ -1,29 +1,20 @@
 {
-  "goal": "Add a tracking flag to autoreload to track changes in manage.py. This should automatically restart the server when manage.py is edited.",
+  "goal": "Create a Python module called todo_app.py with a TodoList class that supports add, remove, list, and mark_complete operations. Include a test file test_todo.py with at least 5 unit tests. Run the tests to verify.",
   "tasks": [
     {
       "step_id": 1,
-      "description": "Modify the autoreload module to include a tracking flag for manage.py changes.",
-      "target_file": "autoreload.py",
-      "test_cmd": "python -m py_compile autoreload.py"
+      "description": "Create todo_app.py with a TodoList class supporting add, remove, list, and mark_complete operations.",
+      "target_file": "todo_app.py"
     },
     {
       "step_id": 2,
-      "description": "Update the server management script (e.g., manage.py) to use the new tracking flag.",
-      "target_file": "manage.py",
-      "test_cmd": "python manage.py runserver --help | grep -- '--track-changes'"
+      "description": "Create test_todo.py with at least 5 unit tests for the TodoList class methods.",
+      "target_file": "test_todo.py"
     },
     {
       "step_id": 3,
-      "description": "Implement file change monitoring logic in the autoreload module to detect edits to manage.py and trigger server restart.",
-      "target_file": "autoreload.py",
-      "test_cmd": "python -m py_compile autoreload.py"
-    },
-    {
-      "step_id": 4,
-      "description": "Add command-line argument parsing to manage.py to accept the --track-changes flag and pass it to the server.",
-      "target_file": "manage.py",
-      "test_cmd": "python manage.py runserver --help | grep -- '--track-changes'"
+      "description": "Run the tests using pytest to verify the implementation.",
+      "test_cmd": "pytest test_todo.py"
     }
   ]
 }

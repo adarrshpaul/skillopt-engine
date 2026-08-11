@@ -9,12 +9,14 @@ from terminal_bench.terminal.tmux_session import TmuxSession
 from terminal_bench.terminal.models import TerminalCommand
 import litellm
 from e2b import Sandbox
+import model_router
 
 # Ensure nanobot is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "nanobot")))
 
-# Configure litellm to use local models
-litellm.api_base = "http://localhost:8801/v1"
+# Configure litellm to use model_router
+_planner_url = model_router.get_url("planner")
+litellm.api_base = _planner_url
 litellm.api_key = "sk-mock-key"
 
 class NanobotAgent(BaseAgent):
@@ -140,9 +142,9 @@ Do NOT output any markdown, only the raw JSON object."""},
                 for step in range(15):  # Max 15 steps
                     print(f"[NanobotAgent] Step {step+1}: Thinking...")
                     response = litellm.completion(
-                        model="openai/mlx-community/Ling-mini-2.0-4bit",
+                        model=f"openai/{model_router.get_model('planner')}",
                         messages=messages,
-                        api_base="http://localhost:8801/v1",
+                        api_base=model_router.get_url('planner'),
                         api_key="sk-mock-key",
                         temperature=0.1,
                         max_tokens=2048

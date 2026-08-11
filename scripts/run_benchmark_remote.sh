@@ -33,10 +33,11 @@ if [ ! -f "tb-env/bin/docker" ] || [ -L "tb-env/bin/docker" ]; then
     ln -sf "$(pwd)/scripts/docker_ssh_wrapper.sh" "tb-env/bin/docker"
 fi
 
-echo "[+] Launching terminal-bench via custom_nanobot_adapter..."
+echo "Running benchmark via tb..."
 tb run \
   --dataset-path /Users/adarrsh/workspace/ABC-Bench-Dataset/tasks \
   --agent-import-path custom_nanobot_adapter:NanobotAgent \
+  --task-id task_15dkatz_official_joke_api__random_jokes \
   --n-attempts 1 \
   --global-agent-timeout-sec 600 \
   --n-concurrent 1

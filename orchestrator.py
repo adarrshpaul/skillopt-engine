@@ -648,18 +648,23 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
         # Instruction Governance (Reporails Native Integration)
         from core.instruction_governance import ReporailsLinter
         linter = ReporailsLinter()
-        findings = linter.lint_workspace(os.getcwd(), CODER_SYSTEM_PROMPT)
+        findings, has_error = linter.lint_all(os.getcwd(), CODER_SYSTEM_PROMPT, goal=goal)
         
-        if findings:
-            print("⚠️  [Reporails] Instruction Governance Failed:", flush=True)
-            has_error = False
+        print("🛡️  [Reporails Engine] Active Instruction Governance Pre-Flight Check:", flush=True)
+        if not findings:
+            print("   ✅ All mechanical and deterministic rule checks PASSED.", flush=True)
+        else:
             for f in findings:
-                print(f"  [{f.severity.upper()}] {f.message} (Rule: {f.rule_id})", flush=True)
-                if f.severity == "error":
-                    has_error = True
+                icon = "❌" if f.severity == "error" else ("⚠️ " if f.severity == "warning" else "ℹ️ ")
+                print(f"   {icon} [{f.severity.upper()}] {f.message} (Rule: {f.rule_id})", flush=True)
             
+            ledger.append(SessionEvent(
+                event_type="reporails/lint",
+                payload={"findings_count": len(findings), "has_error": has_error}
+            ))
+
             if has_error and not interactive:
-                print("❌ [Reporails] Aborting run due to 'error' level governance failures. Fix vague instructions or use --interactive to override.", flush=True)
+                print("❌ [Reporails] Aborting run due to 'error' level governance failures. Fix instructions or use --interactive to override.", flush=True)
                 return
 
     planner_model = os.environ.get("PLANNER_MODEL", "Ling-3.0")

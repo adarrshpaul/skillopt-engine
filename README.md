@@ -1,12 +1,32 @@
-# SkillOpt Engine
+<div align="center">
+  
+# ⚡ SkillOpt Engine 2.0
 
-SkillOpt Engine is a production-grade multi-agent coding harness and orchestration framework designed for Apple Silicon (macOS) and OpenRouter free-tier models. It combines heterogeneous role specialization, intelligent hot-swap failover (model cascading), resilient multi-grammar tool extraction, sandbox execution, and deterministic instruction governance.
+**Zero-Cost, Production-Grade Agentic Orchestration on Apple Silicon.**
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
+[![OpenRouter](https://img.shields.io/badge/Powered_by-OpenRouter-white.svg)](https://openrouter.ai/)
+[![Apple Silicon](https://img.shields.io/badge/Optimized_for-Apple_Silicon-black.svg?logo=apple)](#)
+
+*SkillOpt Engine combines heterogeneous role specialization, intelligent hot-swap failover, resilient multi-grammar tool extraction, sandbox execution, and deterministic instruction governance to build the most robust ReAct loops at zero cost.*
+
+---
+</div>
+
+## ✨ Key Architectural Innovations
+
+- 🔄 **Native Cloud-to-Local Cascading:** Instantly failover from OpenRouter (`429 Too Many Requests`) to local Apple Silicon MLX models (e.g., Nanbeige 3B) without dropping task state.
+- 🛡️ **Active Instruction Evolution:** A self-improving engine that analyzes the ReAct session ledger for Reviewer rejections and dynamically synthesizes deterministic governance rules into `STRICT_RULES.md`.
+- 🗜️ **Two-Tier Context Compaction:** Maintains strict token budgets with Tier 1 in-loop tool result eviction and Tier 2 structured 5-section context distillation checkpoints.
+- 🗺️ **Semantic LSP Navigation:** Escapes naive file dumping via Tree-Sitter AST def-ref graphs and LSP semantic tools (`find_definition`, `find_references`).
+- ⚖️ **Deterministic Governance:** Reporails-native linting evaluates user intent against mechanical rules *before* spending tokens.
 
 ---
 
 ## 🏛️ System Architecture
 
-```
+```text
                                ┌──────────────────────────────────────────────┐
                                │           Multi-Agent Orchestrator           │
                                │              (orchestrator.py)               │
@@ -28,22 +48,15 @@ SkillOpt Engine is a production-grade multi-agent coding harness and orchestrati
    └─────────┘    └─────────┘    └──────────┘                 └───────────────┘             └───────────────┘
 ```
 
----
+### 🧠 Model Roles
 
-## 🔍 Model Roles & Ground-Truth Configuration
+When running in primary cloud mode, the orchestrator partitions duties across specialized free-tier models:
 
-### 1. Primary: Cloud API Mode (OpenRouter Free Tier)
-When running in cloud mode (configured in `run_tests.sh`), the orchestrator partitions duties across specialized models:
-
-| Agent Role | Model ID | Context | Description & Responsibility |
-|---|---|---|---|
-| **Planner** | `nvidia/nemotron-3-ultra-550b-a55b:free` | 1M tokens | High-level reasoning and task graph decomposition into JSON subtasks. |
-| **Coder** | `poolside/laguna-s-2.1:free` | 262K tokens | Code generation and tool execution inside a 15-step iterative ReAct loop. |
-| **Reviewer** | `nvidia/nemotron-3-super-120b-a12b:free` | 262K tokens | Severity-tiered code review (`CRITICAL`, `MAJOR`, `MINOR`, `RECOMMENDATION`). |
-
-### 2. Local Fallback & Offline Engines (Apple Silicon)
-- **Local MLX Server (`http://127.0.0.1:8801/v1`)**: Runs `mlx-community/Nanbeige4.1-3B-heretic-4bit` natively on Apple Silicon Metal GPU. Provides zero-latency hot-swap failover whenever cloud endpoints return `429 Too Many Requests` or `402 Payment Required`.
-- **Local Ollama Server (`http://127.0.0.1:11434`)**: Hosts `ornith9b:latest` (6.5 GB) for offline development.
+| Agent Role | Recommended Model | Responsibility |
+|---|---|---|
+| **Planner** | `nvidia/nemotron-3-ultra-550b-a55b:free` | High-level reasoning and task graph decomposition into JSON subtasks. |
+| **Coder** | `poolside/laguna-s-2.1:free` | Code generation and tool execution inside a 15-step iterative ReAct loop. |
+| **Reviewer** | `nvidia/nemotron-3-super-120b-a12b:free` | Severity-tiered code review and multi-turn ReAct self-healing feedback. |
 
 ---
 
@@ -80,6 +93,9 @@ sequenceDiagram
             Coder->>Tools: write_file patch
         end
     end
+    Reviewer->>Ledger: Active Evolution identifies failure pattern
+    Ledger->>Planner: Synthesize rule
+    Planner->>Gov: Append new constraint to STRICT_RULES.md
 ```
 
 ---
@@ -87,76 +103,33 @@ sequenceDiagram
 ## 🛠️ Core Harness Modules
 
 ### 1. Resilient Output Parsing (`core/output_extractor.py`)
-LLMs often emit conversational preambles or messy formatting when asked for JSON. The 4-stage extractor ensures zero-crash parsing:
-1. **Direct Parse**: `json.loads(text.strip())`
-2. **Markdown Block Extraction**: Regex extraction from ` ```json ... ``` ` or ` ``` ... ``` ` blocks.
-3. **Bracket Balance Counting**: State machine that tracks bracket depth while ignoring string literals and escapes.
-4. **Scanning Decoder Fallback**: `json.JSONDecoder().raw_decode()` across all bracket positions.
+LLMs often emit conversational preambles or messy formatting when asked for JSON. Our 4-stage extractor ensures zero-crash parsing via bracket balance counting state machines.
 
 ### 2. Feedback-Driven Recovery & Plan Synthesis
-- **Planner Retry Loop**: If a model generates malformed task graph output, the orchestrator re-prompts with explicit format instructions (up to 3 attempts).
-- **Atomic Plan Synthesis**: If planner decomposition is exhausted, the harness synthesizes a 1-step atomic plan from the goal so the Coder agent can proceed immediately.
+- **Planner Retry Loop**: If a model generates malformed task graph output, the orchestrator re-prompts with explicit format instructions.
 - **Multi-Turn Self-Healing**: Reviewer rejections trigger an iterative 3-turn repair cycle with the Coder rather than abandoning the task.
 
 ### 3. Tree-Sitter & AST Static Repo Map (`core/symbol_index.py`)
-- **Incremental Cache (`.repomap_cache.json`)**: Tracks file mtime and SHA256 hashes to parse only modified files.
-- **Def-Ref Graph Ranking**: Analyzes call frequencies across classes, functions, and imports to generate a token-budgeted architectural outline (≤1,000 tokens) injected into the Planner and Coder context upfront.
+Analyzes call frequencies across classes, functions, and imports to generate a token-budgeted architectural outline (≤1,000 tokens) injected into the Planner and Coder context upfront.
 
-### 4. Semantic LSP ReAct Tools (`core/lsp_client.py`)
-Replaces naive file dumps with precision semantic navigation:
-- **`find_definition(symbol, file_path)`**: Jumps directly to class/function definitions across files.
-- **`find_references(symbol, file_path)`**: Locates exact call sites and imports.
-- **`document_symbols(path)`**: Extracts file outlines (classes, methods, functions).
-- **`hover(symbol, file_path)`**: Inspects type signatures, line numbers, and docstrings.
+### 4. Tool Pipeline & Sandbox Execution (`sandbox/venv_executor.py`)
+13 powerful actions run through a unified `ToolRegistry` with path traversal defense, including `find_definition`, `find_references`, `run_command`, `write_file`, and `update_plan`.
 
-### 5. Two-Tier In-Loop Dynamic Compaction (`core/compaction.py`)
-Inspired by Claude Code's `context_management` API and Anthropic's 5-section distillation pattern:
-- **Tier 1 (`clear_tool_uses`)**: Evaluates token count after each tool execution in the 15-step ReAct loop. Evicts stale `tool_result` outputs beyond the most recent $K=3$ interactions, replacing them with compact pointer placeholders (`[Tool Output Evicted - Ref #seq]`), while archiving the full raw outputs to `dpo_logs.jsonl` (zero data loss).
-- **Tier 2 (5-Section Summary Checkpoint)**: If context is still saturated, forks a structured 5-section distillation (*Task Overview, Current State, Important Discoveries, Next Steps, Context to Preserve*) and establishes a clean context checkpoint in `derive_messages()`.
-
-### 6. Tool Pipeline & Sandbox Execution (`sandbox/venv_executor.py`)
-All 13 actions run through a unified `ToolRegistry` with path traversal defense:
-- **LSP Tools**: `find_definition`, `find_references`, `document_symbols`, `hover`.
-- **System Tools**: `run_command`, `bash`, `manage_task`.
-- **File Tools**: `write_file`, `replace_file_content`, `edit_file`, `read_file`, `list_dir`, `update_plan`.
-
-### 7. Instruction Governance (`core/instruction_governance.py`)
-Evaluates prompts against `STRICT_RULES.md` before execution to enforce specificity and safety.
-
-### 8. Append-Only Session Ledger (`core/session_ledger.py`)
+### 5. Append-Only Session Ledger (`core/session_ledger.py`)
 Records all events into `runs/session_<id>.jsonl` with deterministic context replay.
 
 ---
 
-## ⚖️ Honest Benchmark Comparison: SkillOpt vs Claude Code vs DeepSeek Harness
-
-### 📊 Capability Matrix
+## ⚖️ Honest Benchmark Comparison
 
 | Architectural Feature | SkillOpt Engine | Claude Code Harness | DeepSeek Harness |
 |---|---|---|---|
-| **Heterogeneous Model Cascading** | ✅ **Native Cloud-to-Local Hot-Swap** (OpenRouter 429 → Local MLX) | ❌ Single-vendor closed API (Claude only) | ❌ Single-model focus (DeepSeek API/Self-hosted) |
-| **Hardware Cost & Accessibility** | ✅ **$0 / Zero-Cost** (Free-tier models + Local Apple Silicon) | ❌ High API cost ($20-$100+/mo for heavy usage) | ❌ High GPU VRAM requirements for self-hosting (70B/671B) |
-| **Deterministic Instruction Governance** | ✅ **Reporails-Native Linter** (Pre-execution rule enforcement) | ⚠️ Post-hoc prompt guardrails | ⚠️ Basic system prompt instructions |
-| **Append-Only Telemetry Ledger** | ✅ **Deterministic JSONL Event Replay** (`derive_messages`) | ✅ Full session replay & telemetry | ✅ Trajectory rollout logging |
-| **Tool Extraction Robustness** | ✅ **4-Stage Multi-Grammar Extractor** (Bracket state machine) | ✅ Native JSON Function Calling API | ⚠️ Tag parsing (`<tool_call>` / XML) |
-| **Context Window Compaction** | ✅ **Two-Tier In-Loop Compactor** (`clear_tool_uses` + 5-section checkpoint) | ✅ **Dynamic Sliding-Window Compaction** + Prompt Caching | ⚠️ Chunked trajectory truncation |
-| **Codebase Structural Indexing** | ✅ **Tree-Sitter / AST Def-Ref Graph** + Semantic LSP Tools | ✅ **Full LSP, AST Indexing, & Ripgrep Pipes** | ✅ Tree-sitter AST Symbol Graph Search |
-| **Terminal / PTY Interactivity** | ⚠️ Native Venv PTY (Buffered execution) | ✅ **True Bi-directional Streaming PTY** | ⚠️ Non-interactive Docker subprocesses |
-| **Raw Reasoning Ceiling** | ⚠️ Dependent on Free/Small Models (3B - 550B MoE) | ✅ **Frontier-Class Reasoning** (Claude 3.7 Sonnet) | ✅ **Frontier-Class Reasoning** (DeepSeek-V3 / R1) |
-
----
-
-### 🔍 Deep-Dive: Where We Win vs Where We Have Gaps
-
-#### 🏆 Where SkillOpt Excels
-1. **Free-Tier Resilience & Hot-Swap Failover**: Neither Claude Code nor DeepSeek harnesses are designed to survive rate limits on $0 free tiers. SkillOpt automatically intercepts 429/402 HTTP errors and hot-swaps to local Apple Silicon MLX without dropping task state.
-2. **Deterministic Pre-Execution Linting**: Our Reporails-inspired linter evaluates user intent against mechanical rules (`STRICT_RULES.md`) *before* spending tokens or dispatching to models.
-3. **Low-Memory Apple Silicon Optimization**: Runs comfortably on 16GB MacBooks using 4-bit MLX weights without requiring heavy container VMs or multi-GPU clusters.
-
-#### ⚠️ Honest Gaps & Future Roadmap
-1. **Model Intelligence Floor**: When free cloud models hit aggressive rate limits, failing over to local 3B models (`Nanbeige 4.1 3B`) limits planning capacity for large 50+ file codebases. Frontier closed models (Claude 3.7 / DeepSeek R1) inherently handle complex multi-file dependencies better.
-2. **Context Compaction inside ReAct**: Claude Code dynamically compacts conversation turns mid-session using prompt caching. SkillOpt's `CompactionGovernor` currently runs between subtasks rather than dynamically compressing inside the 15-step ReAct loop.
-3. **Semantic Symbol Search**: DeepSeek and Claude Code utilize Tree-sitter AST search and Language Server Protocols (LSP) to resolve cross-file references. SkillOpt currently relies on lexical tools (`read_file`, `list_dir`) and optional FAISS embeddings.
+| **Heterogeneous Model Cascading** | ✅ **Native Cloud-to-Local** | ❌ Single-vendor (Claude) | ❌ Single-model |
+| **Hardware Cost & Accessibility** | ✅ **$0 / Zero-Cost** (Apple Silicon) | ❌ High API cost | ❌ High GPU VRAM needed |
+| **Instruction Governance** | ✅ **Active Evolution & Linting** | ⚠️ Post-hoc prompt guardrails | ⚠️ Basic system prompts |
+| **Telemetry Ledger** | ✅ **Deterministic JSONL Replay** | ✅ Full session replay | ✅ Trajectory rollout logging |
+| **Context Window Compaction** | ✅ **Two-Tier In-Loop Compactor** | ✅ Dynamic Sliding-Window | ⚠️ Chunked trajectory truncation |
+| **Codebase Indexing** | ✅ **Tree-Sitter / AST Def-Ref Graph** | ✅ Full LSP, AST Indexing | ✅ Tree-sitter AST Graph Search |
 
 ---
 
@@ -182,76 +155,19 @@ pip install pytest psutil anyio python-dotenv faiss-cpu sentence-transformers
 # 4. Set OpenRouter API Key (in .env or environment)
 export OPENROUTER_API_KEY="sk-or-v1-..."
 
-# 5. Run test runner
-./run_tests.sh
-
-# Or run orchestrator with custom goal
+# 5. Run orchestrator with custom goal
 python3 -u orchestrator.py "Create a math helper utility in math_helper.py and verify with pytest"
 ```
-
----
-
-## ⚙️ Environment Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLANNER_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b:free` | Model used for task decomposition |
-| `PLANNER_ENGINE` | `openrouter` | Engine for Planner (`openrouter`, `mlx`, `ollama`, `litellm`) |
-| `PLANNER_URL` | `https://openrouter.ai/api/v1` | Endpoint URL for Planner |
-| `CODER_MODEL` | `poolside/laguna-s-2.1:free` | Model used for coding and tool execution |
-| `CODER_ENGINE` | `openrouter` | Engine for Coder |
-| `CODER_URL` | `https://openrouter.ai/api/v1` | Endpoint URL for Coder |
-| `REVIEWER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Model used for code review |
-| `REVIEWER_ENGINE` | `openrouter` | Engine for Reviewer |
-| `REVIEWER_URL` | `https://openrouter.ai/api/v1` | Endpoint URL for Reviewer |
-| `FALLBACK_MODEL` | `mlx-community/Nanbeige4.1-3B-heretic-4bit` | Local model for hot-swap failover |
-| `FALLBACK_ENGINE` | `mlx` | Engine for fallback |
-| `FALLBACK_URL` | `http://localhost:8801/v1` | Local MLX server URL |
-| `OPENROUTER_API_KEY` | *(None)* | OpenRouter API authentication key |
-
----
 
 ## 🧪 Running Tests
 
 ```bash
 # Run unit test suite across all core modules
 pytest tests/ -v
-
-# Run individual module tests
-pytest tests/test_tool_pipeline.py
-pytest tests/test_safety_gate.py
-pytest tests/test_session_ledger.py
-pytest tests/test_task_ledger.py
-pytest tests/test_compaction.py
-pytest tests/test_parallel_executor.py
 ```
 
 ---
-
-## 📁 Repository Directory Map
-
-```
-├── orchestrator.py              # Main multi-agent ReAct orchestrator
-├── model_router.py              # Role-to-endpoint routing registry
-├── run_tests.sh                 # Test runner entrypoint
-├── core/
-│   ├── output_extractor.py      # Resilient JSON array and object extraction
-│   ├── instruction_governance.py# Reporails-native goal linter
-│   ├── session_ledger.py        # Append-only JSONL execution ledger
-│   ├── task_ledger.py           # Markdown task state tracker (Plans.md)
-│   ├── tool_pipeline.py         # Multi-grammar tool parsing engine
-│   ├── safety_gate.py           # Command validation floor
-│   ├── parallel_executor.py     # Concurrent tool execution engine
-│   └── compaction.py            # Context window compaction governor
-├── sandbox/
-│   └── venv_executor.py         # PTY-based venv execution sandbox
-├── tests/                       # Unit test suite for core modules
-├── benchmark_free_models.py     # OpenRouter model evaluation suite
-├── STRICT_RULES.md              # Instruction governance ruleset
-└── SYSTEM_ARCHITECTURE.md       # Architectural deep-dive
-```
-
----
-
-## License
-Apache 2.0
+<div align="center">
+  <p><i>Engineered for the Open-Source Agentic Future.</i></p>
+  <p>Apache 2.0 License</p>
+</div>

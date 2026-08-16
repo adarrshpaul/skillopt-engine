@@ -983,6 +983,28 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
         sandbox.teardown()
         clear_wip_state()
 
+    # Active Instruction Evolution
+    try:
+        from core.instruction_evolution import RuleEvolutionEngine
+        rule_engine = RuleEvolutionEngine(workspace_root)
+        failures = rule_engine.analyze_session(ledger)
+        if failures:
+            print(f"   🧬 [Evolution Engine] Detected {len(failures)} Reviewer rejections. Synthesizing new rules...", flush=True)
+            synth_system_prompt = "You are a Governance Engine. Output only the requested rule without explanation."
+            for failure in failures:
+                synthesis_prompt = rule_engine.build_synthesis_prompt(failure)
+                new_rule = query_model(
+                    base_url=PLANNER_URL, 
+                    system_prompt=synth_system_prompt, 
+                    user_prompt=synthesis_prompt, 
+                    model_name=PLANNER_MODEL, 
+                    engine=PLANNER_ENGINE
+                )
+                if new_rule:
+                    rule_engine.apply_rule(new_rule)
+                    print(f"   ✅ [Evolution Engine] Evolved STRICT_RULES.md with new constraint.", flush=True)
+    except Exception as e:
+        print(f"   ⚠️ [Evolution Engine] Failed to evolve rules: {e}", flush=True)
 
     update_state_memory(goal, task_graph, len(task_graph), "Execution Complete")
     

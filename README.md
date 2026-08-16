@@ -123,6 +123,40 @@ Records all events into `runs/session_<id>.jsonl`:
 
 ---
 
+## ⚖️ Honest Benchmark Comparison: SkillOpt vs Claude Code vs DeepSeek Harness
+
+To assess the engineering quality and real-world capabilities of SkillOpt Engine, here is an honest, objective breakdown comparing our architecture against the **Claude Code Harness** (Anthropic) and **DeepSeek SWE-bench Harness** (DeepSeek/OpenCode).
+
+### 📊 Capability Matrix
+
+| Architectural Feature | SkillOpt Engine | Claude Code Harness | DeepSeek Harness |
+|---|---|---|---|
+| **Heterogeneous Model Cascading** | ✅ **Native Cloud-to-Local Hot-Swap** (OpenRouter 429 → Local MLX) | ❌ Single-vendor closed API (Claude only) | ❌ Single-model focus (DeepSeek API/Self-hosted) |
+| **Hardware Cost & Accessibility** | ✅ **$0 / Zero-Cost** (Free-tier models + Local Apple Silicon) | ❌ High API cost ($20-$100+/mo for heavy usage) | ❌ High GPU VRAM requirements for self-hosting (70B/671B) |
+| **Deterministic Instruction Governance** | ✅ **Reporails-Native Linter** (Pre-execution rule enforcement) | ⚠️ Post-hoc prompt guardrails | ⚠️ Basic system prompt instructions |
+| **Append-Only Telemetry Ledger** | ✅ **Deterministic JSONL Event Replay** (`derive_messages`) | ✅ Full session replay & telemetry | ✅ Trajectory rollout logging |
+| **Tool Extraction Robustness** | ✅ **4-Stage Multi-Grammar Extractor** (Bracket state machine) | ✅ Native JSON Function Calling API | ⚠️ Tag parsing (`<tool_call>` / XML) |
+| **Context Window Compaction** | ⚠️ Static Compaction Governor (Triggered per subtask) | ✅ **Dynamic Sliding-Window Compaction** + Prompt Caching | ⚠️ Chunked trajectory truncation |
+| **Codebase Structural Indexing** | ⚠️ P3 FAISS (Optional, disabled on 16GB mode) | ✅ **Full LSP, AST Indexing, & Ripgrep Pipes** | ✅ Tree-sitter AST Symbol Graph Search |
+| **Terminal / PTY Interactivity** | ⚠️ Native Venv PTY (Buffered execution) | ✅ **True Bi-directional Streaming PTY** | ⚠️ Non-interactive Docker subprocesses |
+| **Raw Reasoning Ceiling** | ⚠️ Dependent on Free/Small Models (3B - 550B MoE) | ✅ **Frontier-Class Reasoning** (Claude 3.7 Sonnet) | ✅ **Frontier-Class Reasoning** (DeepSeek-V3 / R1) |
+
+---
+
+### 🔍 Deep-Dive: Where We Win vs Where We Have Gaps
+
+#### 🏆 Where SkillOpt Excels
+1. **Free-Tier Resilience & Hot-Swap Failover**: Neither Claude Code nor DeepSeek harnesses are designed to survive rate limits on $0 free tiers. SkillOpt automatically intercepts 429/402 HTTP errors and hot-swaps to local Apple Silicon MLX without dropping task state.
+2. **Deterministic Pre-Execution Linting**: Our Reporails-inspired linter evaluates user intent against mechanical rules (`STRICT_RULES.md`) *before* spending tokens or dispatching to models.
+3. **Low-Memory Apple Silicon Optimization**: Runs comfortably on 16GB MacBooks using 4-bit MLX weights without requiring heavy container VMs or multi-GPU clusters.
+
+#### ⚠️ Honest Gaps & Future Roadmap
+1. **Model Intelligence Floor**: When free cloud models hit aggressive rate limits, failing over to local 3B models (`Nanbeige 4.1 3B`) limits planning capacity for large 50+ file codebases. Frontier closed models (Claude 3.7 / DeepSeek R1) inherently handle complex multi-file dependencies better.
+2. **Context Compaction inside ReAct**: Claude Code dynamically compacts conversation turns mid-session using prompt caching. SkillOpt's `CompactionGovernor` currently runs between subtasks rather than dynamically compressing inside the 15-step ReAct loop.
+3. **Semantic Symbol Search**: DeepSeek and Claude Code utilize Tree-sitter AST search and Language Server Protocols (LSP) to resolve cross-file references. SkillOpt currently relies on lexical tools (`read_file`, `list_dir`) and optional FAISS embeddings.
+
+---
+
 ## 🚀 Quickstart & Setup
 
 ### Prerequisites

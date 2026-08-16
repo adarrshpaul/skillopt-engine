@@ -12,6 +12,7 @@ fused_model/
 *.bin
 *.pt
 *.tar.gz
+*.gguf
 .DS_Store
 projects/
 task_graph.json
@@ -23,4 +24,12 @@ ABC-Bench-Dataset/
 tb-env/
 skillopt-env/
 runs/
-
+.test_venv/
+.harness_wip.json
+harness_checkpoint.json
+Plans.md
+string_helper.py
+math_helper.py
+taskmaster.py
+test_taskmaster.py
+tasks.json

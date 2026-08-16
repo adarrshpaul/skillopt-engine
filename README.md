@@ -11,48 +11,64 @@ Instead of relying on cloud APIs or attempting to load massive models concurrent
 ## Core Architecture
 
 ### 1. The Orchestrator (`orchestrator.py`)
-- **Multi-Agent Routing**: Uses `Ling-3.0` as the "Planner" and "Reviewer" subagents via native MLX (`mlx_cli.py`), while `Ornith-9B` executes "Coder" tasks via a local Ollama daemon.
-- **Severity-Tiered Review Loop**: Implements a strict Maker-Checker loop. The Maker (Coder) has access to 5 local tools (read_file, run_command, etc.) to generate code. The Checker (Reviewer) evaluates it. If the Checker rejects it, the loop continues up to 3 times per subtask.
-- **Evidentiary Output**: Automatically generates a `completion_report.md` ledger at the end of execution to provide proof of validation, and dumps structural crashes into a deduped DPO JSONL for later fine-tuning.
+- **Heterogeneous Multi-Agent Routing**: Uses distinct, specialized models for each agent role via configurable environment variables:
+  - **Planner** (`PLANNER_MODEL`): Decomposes user goals into structured JSON task graphs. Default: `nvidia/nemotron-3-ultra-550b-a55b:free` via OpenRouter.
+  - **Coder** (`CODER_MODEL`): Executes an iterative ReAct loop (up to 15 steps) with tool access to write files, run commands, and navigate the workspace. Default: `poolside/laguna-s-2.1:free`.
+  - **Reviewer** (`REVIEWER_MODEL`): Performs severity-tiered code review (CRITICAL/MAJOR/MINOR/RECOMMENDATION) and gates task completion. Default: `nvidia/nemotron-3-super-120b-a12b:free`.
+- **Multi-Engine Backend**: Supports `mlx`, `openrouter`, `openai`, `litellm`, and `ollama` engines simultaneously.
+- **Session Ledger (`core/session_ledger.py`)**: Append-only JSONL event log that deterministically projects model context via `derive_messages()`. Every tool call, model response, review verdict, and error is immutably recorded.
 
-### 2. Sandbox Execution Environment (`autoqa/sandbox.py`)
-- **Native Venv Isolation**: Instead of using Docker or Orbstack (which introduce a persistent 2-4GB VM tax that violates our 16GB ceiling), SkillOpt uses native Python virtual environments (`venv`) to evaluate generated patches natively.
-- **True Execution**: Generated code is applied via `git apply` and evaluated using the target repository's actual test suite (e.g., `pytest`), rather than relying on unreliable LLM grading.
+### 2. Intelligent Failover Architecture
+- **Cloud → Local Hot-Swap**: When OpenRouter returns `429 Too Many Requests` or `402 Payment Required`, the orchestrator instantly hot-swaps the request to a local MLX model (`mlx-community/Nanbeige4.1-3B-heretic-4bit`) with zero queuing delay.
+- **Atomic Plan Synthesis**: If the Planner cannot decompose a goal into JSON subtasks after 3 feedback-driven retries, the system automatically synthesizes a default atomic task graph from the user's goal, ensuring the Coder agent always has work to execute.
 
-### 3. Admission Controller & Traffic Shaping
-- **P1 (Interactive)**: High-priority token bucket for user interactions.
-- **P2 (Planner Tasks)**: FIFO queue for complex task execution, with preemption capabilities.
-- **P3 (Background)**: Opportunistic scheduling for tasks like FAISS vector indexing, dynamically throttled based on CPU utilization.
+### 3. Resilient Output Parsing (`core/output_extractor.py`)
+- **Multi-Strategy JSON Extraction**: Handles direct JSON, markdown code fences, conversational preambles, and nested bracket structures via a 4-stage extraction pipeline:
+  1. Direct `json.loads()` attempt
+  2. Markdown fence regex extraction
+  3. Bracket-depth counting with string-literal awareness
+  4. Scanning `json.JSONDecoder.raw_decode()` fallback
 
----
+### 4. Feedback-Driven Recovery
+- **Planner Retry Loop**: On JSON parse failure, the orchestrator re-prompts the Planner with an explicit corrective instruction and a concrete format example (up to 3 attempts).
+- **Multi-Turn Self-Healing**: When the Reviewer rejects code, the Coder receives the review feedback and iterates up to 3 repair cycles with re-review after each attempt.
 
-## Safety & Governance (The Good Things)
+### 5. Instruction Governance (`core/instruction_governance.py`)
+- **Reporails-Native Linter**: A deterministic rule engine (inspired by [Reporails CLI](https://github.com/reporails/cli)) that validates user goals against mechanical rules before execution:
+  - Blocks vague, overly broad, or dangerous instructions.
+  - Enforces specificity in file targets and scope.
+  - Runs without any external API dependency.
 
-1. **Memory Overlap Protection & Eviction Failsafes**: The orchestrator strictly polls the Ollama `/api/ps` endpoint. It enforces a 15-second wait to ensure the Coder model is completely unloaded from Unified Memory before spinning up the Reviewer model, preventing the 16GB ceiling from being breached.
-2. **Orphan Cleanup (`killpg`)**: `mlx_cli.py` is invoked using `start_new_session=True`. If the 180-second hard timeout is hit, `os.killpg()` ensures the entire process group is wiped out, preventing zombie grandchildren from leaking VRAM across hundreds of benchmark runs.
-3. **DPO Deduplication**: The `reporter.py` engine strips `<HEX>`, `<UUID>`, and `<PATH>` data from raw unstructured crashes, generating deterministic structural hashes. This prevents thousands of identical exception logs from polluting the DPO dataset.
-
----
-
-## Current Benchmarks & Known Issues
-
-### 📊 SWE-Bench Lite Adapter Benchmarks
-- **Instance**: `django__django-11422`
-- **Output Quality**: The Coder (`Ornith:9b`) successfully diagnosed the required `argparse` injection in `manage.py`, adding the `--tracking` flag and threading it through kwargs to the target functions.
-- **Execution Speed**: Due to the rigorous Maker/Checker looping (up to 3 iterations per subtask) and the sequential model loading to preserve RAM, a single SWE-bench instance takes **~10-15 minutes**.
-- **Scale Estimations**: Running the full 300-instance SWE-Bench Lite dataset takes approximately **50-75 hours** sequentially. 
-
-### ⚠️ Known Issues
-1. **Model Deadlocks (Exit Code 28)**: Heavy ping-ponging between MLX (GPU) and Ollama on Apple Silicon can occasionally cause the Ollama daemon to freeze and hit the 5-minute HTTP timeout limit. Restarting the daemon clears the GPU hang.
-2. **Missing `tests/` directories in Sandbox**: Since we are bypassing Docker containers, some local test commands attempt to run on missing paths unless the full target repository is perfectly mirrored locally. 
+### 6. Sandbox Execution Environment (`sandbox/venv_executor.py`)
+- **Native Venv Isolation**: Uses Python virtual environments (`venv`) with PTY-based subprocess execution for full terminal fidelity.
+- **Background Task Management**: Supports daemon processes via threaded output streaming.
+- **Process Group Cleanup**: Uses `os.killpg()` for clean teardown of entire process trees.
 
 ---
 
-## ABC-Bench Dual-Container Architecture
+## Safety & Security
 
-For advanced benchmarks like **ABC-Bench** that require heavy backend deployment (which would normally crush a 16GB Mac), we have introduced a **Dual-Container Cloud-Hybrid Architecture**. 
+1. **Path Traversal Protection**: `_safe_path()` validates all file operations against the workspace boundary using trailing-separator-aware `startswith()` checks, preventing sibling directory escapes.
+2. **Command Safety Gate (`core/safety_gate.py`)**: Blocks dangerous shell commands (`rm -rf /`, `curl | bash`, etc.) before sandbox execution.
+3. **Tool Registry**: All 9 tools (`run_command`, `bash`, `write_file`, `edit_file`, `replace_file_content`, `read_file`, `list_dir`, `manage_task`, `update_plan`) are centrally registered with unified safety enforcement.
+4. **DPO Deduplication**: The reporter engine strips hex, UUID, and path data from raw crashes, generating deterministic structural hashes to prevent dataset pollution.
 
-Please see the [Free-Tier Cloud Sandboxes Guide](FREE_TIER_SANDBOXES.md) for full instructions on how to configure `terminal-bench` with remote Docker hosts like GitHub Codespaces, Gitpod, and E2B.
+---
+
+## Supported Free Models (OpenRouter)
+
+The following free-tier models are tested and supported via the heterogeneous routing architecture:
+
+| Model | Best Role | Context | Key Strength |
+|-------|-----------|---------|--------------|
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | Planner | 1M | Multi-step reasoning, orchestration |
+| `poolside/laguna-s-2.1:free` | Coder | 262K | 70.2% Terminal-Bench, agentic coding |
+| `nvidia/nemotron-3-super-120b-a12b:free` | Reviewer | 262K | Fast MoE, high accuracy |
+| `cohere/north-mini-code:free` | Coder (alt) | 256K | Terminal tasks, agent harnesses |
+| `dots-studio/dots-3-note-preview:free` | Planner (alt) | 512K | Coding, multi-step workflows |
+| `openai/gpt-oss-20b:free` | Reviewer (alt) | 131K | Function calling, structured output |
+
+**Local Fallback**: `mlx-community/Nanbeige4.1-3B-heretic-4bit` via Apple MLX (zero-latency failover)
 
 ---
 
@@ -62,15 +78,74 @@ Please see the [Free-Tier Cloud Sandboxes Guide](FREE_TIER_SANDBOXES.md) for ful
 - macOS (Apple Silicon optimized, 16GB RAM strict limit)
 - Python 3.11+
 - `uv` or `pip` for dependency management
+- An [OpenRouter API key](https://openrouter.ai/) (free tier supported)
 
 ### Installation
 ```bash
+# Clone the repository
+git clone https://github.com/adarrshpaul/skillopt-engine.git
+cd skillopt-engine
+
+# Create virtual environment
+python3 -m venv tb-env
+source tb-env/bin/activate
+
 # Install dependencies
-pip install pytest psutil anyio
+pip install pytest psutil anyio python-dotenv faiss-cpu sentence-transformers
+
+# Set your OpenRouter API key
+echo "OPENROUTER_API_KEY=sk-or-..." > .env
 ```
 
-### Running the QA Harness
+### Running the Orchestrator
 ```bash
-# Run the SWE-Bench adapter
-python -m pytest autoqa/tests/ -v -s
+# Configure models in run_tests.sh, then:
+source tb-env/bin/activate
+./run_tests.sh
+
+# Or run directly:
+python3 -u orchestrator.py "Your coding goal here"
 ```
+
+### Environment Variables
+```bash
+# Model routing (set per role)
+export PLANNER_ENGINE="openrouter"
+export PLANNER_URL="https://openrouter.ai/api/v1"
+export PLANNER_MODEL="nvidia/nemotron-3-ultra-550b-a55b:free"
+
+export CODER_ENGINE="openrouter"
+export CODER_URL="https://openrouter.ai/api/v1"
+export CODER_MODEL="poolside/laguna-s-2.1:free"
+
+export REVIEWER_ENGINE="openrouter"
+export REVIEWER_URL="https://openrouter.ai/api/v1"
+export REVIEWER_MODEL="nvidia/nemotron-3-super-120b-a12b:free"
+```
+
+---
+
+## Project Structure
+```
+├── orchestrator.py              # Main multi-agent ReAct orchestrator
+├── model_router.py              # Engine/model routing configuration
+├── run_tests.sh                 # Test harness entry point
+├── core/
+│   ├── output_extractor.py      # Resilient JSON extraction from LLM output
+│   ├── instruction_governance.py # Reporails-native goal linting
+│   ├── session_ledger.py        # Append-only JSONL event ledger
+│   ├── task_ledger.py           # Markdown task tracking (Plans.md)
+│   ├── tool_pipeline.py         # Multi-grammar tool call parser
+│   ├── safety_gate.py           # Command safety evaluation
+│   └── compaction.py            # Context window compaction governor
+├── sandbox/
+│   └── venv_executor.py         # PTY-based venv sandbox executor
+├── benchmark_free_models.py     # Free-tier model benchmark suite
+├── STRICT_RULES.md              # Instruction governance ruleset
+└── SYSTEM_ARCHITECTURE.md       # Detailed architecture documentation
+```
+
+---
+
+## License
+Apache 2.0

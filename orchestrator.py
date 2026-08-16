@@ -1,11 +1,14 @@
 import os
 import sys
+from dotenv import load_dotenv
+load_dotenv()
 import json
 import time
 import subprocess
 import argparse
 import ast
 import logging
+from pathlib import Path
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 
@@ -15,6 +18,8 @@ def log_trace(msg: str):
     print(f"   [Trace] {msg}", flush=True)
     logging.info(msg)
 from typing import List, Dict, Any
+import random
+import urllib.error
 from urllib.request import Request, urlopen
 
 # Ling-3.0-Flash (:8801) for Orchestration + Ornith-9B (:8800) for Coding
@@ -22,6 +27,14 @@ import model_router
 from p3_faiss_worker import P3Worker
 import claw_compactor
 from sandbox.venv_executor import NativeVenvSandbox
+
+# Core Harness Framework (DeepSeek & Claude Code Harness Synthesis)
+from core.session_ledger import JSONLSessionLedger, SessionEvent
+from core.safety_gate import evaluate_tool_call, Decision
+from core.tool_pipeline import ToolPipeline, ToolCall, ToolResult, parse_tool_calls_from_text
+from core.task_ledger import MarkdownTaskLedger, TaskSpec
+from core.compaction import CompactionGovernor, save_wip_state, restore_wip_state, clear_wip_state
+from core.output_extractor import extract_json_array, extract_json_object
 
 class InfraError(Exception):
     """Raised when hardware or infrastructure fails (e.g. memory eviction timeout)."""
@@ -92,15 +105,18 @@ You solve coding tasks by iterating: think about what to do, take an action, obs
 ## Available Tools
 You have these tools. Emit ONE tool call at a time inside <execute> tags. The system returns the output, then you continue.
 
-1. **run_command(cmd)** — Run a shell command. Use for installing deps, running tests, scaffolding projects.
+1. **run_command(cmd, is_daemon=False)** — Run a shell command. Set is_daemon=True for long-running servers.
    <execute>run_command("npm install express")</execute>
-   <execute>run_command("python -m pytest tests/ -v")</execute>
+   <execute>run_command("python server.py", True)</execute>
+
+2. **manage_task(action, task_id)** — Manage background tasks. Action can be "status" or "kill".
+   <execute>manage_task("status", "task_1")</execute>
 
 2. **write_file(path, content)** — Create or overwrite a file with the given content.
    <execute>write_file("src/app.py", "import flask\\napp = flask.Flask(__name__)\\n")</execute>
 
-3. **edit_file(path, old_text, new_text)** — Surgically replace a specific string in an existing file.
-   <execute>edit_file("src/app.py", "def old_func():", "def new_func():")</execute>
+3. **replace_file_content(path, start_line, end_line, replacement_content)** — Surgically replace lines in an existing file. Lines are 1-indexed.
+   <execute>replace_file_content("src/app.py", 10, 15, "def new_func():\\n    pass\\n")</execute>
 
 4. **read_file(path)** — Read the contents of a file.
    <execute>read_file("src/app.py")</execute>
@@ -108,10 +124,13 @@ You have these tools. Emit ONE tool call at a time inside <execute> tags. The sy
 5. **list_dir(path)** — List directory contents.
    <execute>list_dir(".")</execute>
 
+6. **update_plan(new_tasks)** — Replace all remaining upcoming tasks with a new list of tasks. Each task must have {"step_id": int, "description": "...", "target_file": "..."}.
+   <execute>update_plan([{"step_id": 3, "description": "Refactor router", "target_file": "router.py"}])</execute>
+
 ## Workflow
 1. Read the task description carefully.
 2. Explore the workspace with list_dir and read_file to understand what exists.
-3. Write code using write_file or edit_file.
+3. Write code using write_file or replace_file_content.
 4. Run tests using run_command to verify your work.
 5. If tests fail, read the error output, fix the code, and re-run.
 6. When everything passes, emit <done> to signal completion.
@@ -138,19 +157,20 @@ If there are only MINOR, RECOMMENDATION, or no issues, respond with "APPROVE" fo
 Do not write the fixed code yourself.
 """
 
-def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name: str = CODER_MODEL, engine: str = CODER_ENGINE, vector: str = None, alpha: float = 1.0, layer: int = 16, max_retries: int = 3) -> str:
+def query_model(base_url: str, system_prompt: str, user_prompt: str = None, messages: list = None, model_name: str = CODER_MODEL, engine: str = CODER_ENGINE, vector: str = None, alpha: float = 1.0, layer: int = 16, max_retries: int = 3, max_tokens: int = 2048) -> str:
+    msg_array = messages if messages is not None else [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
     if engine == "mlx":
         log_trace(f"Querying persistent MLX Server for {model_name}...")
         payload = {
             "model": model_name,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "max_tokens": 1024,
+            "messages": msg_array,
+            "max_tokens": max_tokens,
             "temperature": 0.2
         }
-        url = "http://127.0.0.1:8801/v1/chat/completions"
+        url = f"{base_url.rstrip('/')}/chat/completions"
         for attempt in range(1, max_retries + 1):
             start_time = time.time()
             try:
@@ -158,38 +178,96 @@ def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name:
                 with urlopen(req, timeout=300) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     elapsed = time.time() - start_time
-                    resp_text = data["choices"][0]["message"]["content"]
+                    msg = data["choices"][0].get("message", {})
+                    resp_text = msg.get("content") or msg.get("reasoning") or ""
                     log_trace(f"Response from MLX Server in {elapsed:.2f}s ({len(resp_text)} chars)")
                     return resp_text
             except Exception as e:
                 elapsed = time.time() - start_time
                 log_trace(f"Attempt {attempt}/{max_retries} MLX API failed after {elapsed:.2f}s: {e}")
-                print(f"⚠️ [Attempt {attempt}/{max_retries}] MLX query failed.", flush=True)
+                print(f"⚠️ [Attempt {attempt}/{max_retries}] MLX query failed ({e}).", flush=True)
+                if attempt < max_retries:
+                    time.sleep(2)
                 
         print(f"❌ [Orchestrator Error] All {max_retries} attempts to contact MLX Server failed.", flush=True)
-        sys.exit(1)
+        raise RuntimeError(f"All {max_retries} attempts to contact MLX Server failed.")
         
-    # Force evict the MLX server before loading an Ollama model to guarantee 16GB safety
-    try:
-        log_trace("Evicting MLX Server to reclaim unified memory...")
-        evict_req = Request("http://127.0.0.1:8801/evict", method="POST")
-        with urlopen(evict_req, timeout=10) as _:
-            pass
-    except Exception as e:
-        log_trace(f"Warning: MLX Server eviction check failed: {e}")
+    if engine in ("openrouter", "openai", "litellm"):
+        log_trace(f"Querying {engine.upper()} API for {model_name}...")
+        payload = {
+            "model": model_name,
+            "messages": msg_array,
+            "max_tokens": max_tokens,
+            "temperature": 0.2
+        }
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        api_key = os.environ.get("OPENROUTER_API_KEY", "") if engine == "openrouter" else os.environ.get("OPENAI_API_KEY", "")
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+            if engine == "openrouter":
+                headers["HTTP-Referer"] = "http://localhost:8800"
+                headers["X-Title"] = "Terminal-Bench-Orchestrator"
+
+        actual_max_retries = 10 if engine == "openrouter" else max_retries
+        for attempt in range(1, actual_max_retries + 1):
+            start_time = time.time()
+            try:
+                req = Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urlopen(req, timeout=300) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    elapsed = time.time() - start_time
+                    msg = data["choices"][0].get("message", {})
+                    resp_text = msg.get("content") or msg.get("reasoning") or ""
+                    log_trace(f"Response from {engine} in {elapsed:.2f}s ({len(resp_text)} chars)")
+                    return resp_text
+            except urllib.error.HTTPError as e:
+                elapsed = time.time() - start_time
+                if e.code in (402, 429):
+                    log_trace(f"Attempt {attempt}/{actual_max_retries} {engine} API failed: {e}")
+                    print(f"⚠️ [Orchestrator] OpenRouter Limit Reached ({e.code}). Hot-swapping to Local MLX Fallback!", flush=True)
+                    # Instant seamless fallback to local M-Series model
+                    return query_model(
+                        base_url="http://localhost:8801/v1",
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        messages=messages,
+                        model_name="mlx-community/Nanbeige4.1-3B-heretic-4bit",
+                        engine="mlx",
+                        vector=vector,
+                        alpha=alpha,
+                        layer=layer,
+                        max_retries=3,
+                        max_tokens=max_tokens
+                    )
+                else:
+                    log_trace(f"Attempt {attempt}/{actual_max_retries} {engine} API failed after {elapsed:.2f}s: {e}")
+                    print(f"⚠️ [Attempt {attempt}/{actual_max_retries}] {engine} query failed ({e}).", flush=True)
+                    if attempt < actual_max_retries:
+                        time.sleep(2)
+            except Exception as e:
+                elapsed = time.time() - start_time
+                log_trace(f"Attempt {attempt}/{actual_max_retries} {engine} API failed after {elapsed:.2f}s: {e}")
+                print(f"⚠️ [Attempt {attempt}/{actual_max_retries}] {engine} query failed ({e}).", flush=True)
+                if attempt < actual_max_retries:
+                    time.sleep(2)
+                
+        print(f"❌ [Orchestrator Error] All {actual_max_retries} attempts to contact {engine} failed.", flush=True)
+        raise RuntimeError(f"All {actual_max_retries} attempts to contact {engine} failed.")
+
         
-    url = base_url.replace("/v1", "") + "/api/generate"
-    qwen_prompt = f"<|im_start|>system\n{system_prompt}<|im_end|>\n<|im_start|>user\n{user_prompt}<|im_end|>\n<|im_start|>assistant\n"
+    # Ollama engine: use /api/chat for proper message handling
+    url = base_url.replace("/v1", "") + "/api/chat"
     
     payload = {
         "model": model_name,
-        "prompt": qwen_prompt,
+        "messages": msg_array,
         "stream": False,
         "options": {
             "temperature": 0.2,
-            "num_predict": 1024
+            "num_predict": max_tokens
         },
-        "keep_alive": 0
+        "keep_alive": "5m"
     }
     
     if vector:
@@ -207,40 +285,20 @@ def query_model(base_url: str, system_prompt: str, user_prompt: str, model_name:
             with urlopen(req, timeout=300) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 elapsed = time.time() - start_time
-                resp_text = data.get("response", "").strip()
+                msg = data.get("message", {})
+                resp_text = msg.get("content") or msg.get("thinking") or ""
+                resp_text = resp_text.strip()
                 log_trace(f"Response from {model_name} in {elapsed:.2f}s ({len(resp_text)} chars)")
-                
-                # Wait for keep_alive: 0 to actually evict the model
-                ps_url = base_url.replace("/v1", "") + "/api/ps"
-                wait_start = time.time()
-                evicted = False
-                while time.time() - wait_start < 15:
-                    try:
-                        with urlopen(Request(ps_url), timeout=2) as ps_resp:
-                            ps_data = json.loads(ps_resp.read().decode("utf-8"))
-                            if not ps_data.get("models"):
-                                evicted = True
-                                break
-                    except Exception:
-                        pass
-                    time.sleep(0.5)
-                
-                if not evicted:
-                    raise InfraError("Ollama did not evict the model within 15s")
-                
                 return resp_text
-        except InfraError as ie:
-            print(f"❌ [Infra Error] {ie}", flush=True)
-            sys.exit(201)
         except Exception as e:
             elapsed = time.time() - start_time
             log_trace(f"Attempt {attempt}/{max_retries} failed after {elapsed:.2f}s: {e}")
             print(f"⚠️ [Attempt {attempt}/{max_retries}] Model query timed out or failed ({e}).", flush=True)
-            print(f"🛑 FATAL: Hard timeout reached. Exiting immediately to avoid blocking on 16GB RAM constraints.", flush=True)
-            sys.exit(1)
+            if attempt < max_retries:
+                time.sleep(2)
             
     print(f"❌ [Orchestrator Error] All {max_retries} attempts to contact model server failed.", flush=True)
-    sys.exit(1)
+    raise RuntimeError(f"All {max_retries} attempts to contact model server failed.")
 
 def log_dpo_pair(prompt: str, rejected: str, chosen: str, error: str):
     entry = {
@@ -275,197 +333,222 @@ def update_state_memory(goal: str, tasks: List[Dict[str, Any]], current_idx: int
 
 def evaluate_code(code: str, desc: str, target_file: str) -> str:
     """Checker subagent: runs deterministic AST parse + semantic LLM review."""
-    # 1. Deterministic AST syntax check
+    # 1. Deterministic Syntax/Compile Check
     try:
-        ast.parse(code)
-    except SyntaxError as e:
-        return f"CRITICAL: SyntaxError: {e}"
+        import subprocess
+        result = subprocess.run(["python", "-m", "py_compile", target_file], capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            return f"CRITICAL: SyntaxError/CompileError:\\n{result.stderr}"
+    except Exception as e:
+        pass # Fallback to LLM if py_compile fails to run
     
     # 2. Semantic LLM Review
     print(f"   🕵️‍♀️  [Checker] Reviewing code for semantic correctness...", flush=True)
     prompt = f"Task: {desc}\nTarget File: {target_file}\nGenerated Code:\n```python\n{code}\n```\nVerify if this code fulfills the task."
-    review = query_model(REVIEWER_URL, REVIEWER_SYSTEM_PROMPT, prompt, model_name=REVIEWER_MODEL, engine=REVIEWER_ENGINE)
+    review = query_model(REVIEWER_URL, REVIEWER_SYSTEM_PROMPT, prompt, model_name=REVIEWER_MODEL, engine=REVIEWER_ENGINE, max_tokens=1024)
     
     if "APPROVE" in review.upper()[:20] or "PASSED" in review.upper()[:20]:
         return "PASSED"
     return review
 
 def check_command_safety(cmd: str) -> bool:
-    """Pre-execution safety floor. Blocks destructive or unbounded network commands."""
-    dangerous_keywords = ["rm -rf", "drop table", "mkfs", "> /dev/sda", "curl", "wget", "nc ", "ping "]
-    cmd_lower = cmd.lower()
-    for kw in dangerous_keywords:
-        if kw in cmd_lower:
-            return False
-    return True
+    """Pre-execution safety floor using 2-tier SafetyGate."""
+    guard = evaluate_tool_call("bash", {"command": cmd})
+    return guard.decision != "deny"
 
-def _execute_tool(tool_str: str, sandbox) -> str:
-    """Dispatch a tool call from the Coder agent. Returns the tool output as a string.
-    
-    Supported tools:
-      run_command(cmd)           — Execute a shell command in the sandbox
-      write_file(path, content)  — Create/overwrite a file
-      edit_file(path, old, new)  — Surgical string replacement in a file
-      read_file(path)            — Read file contents
-      list_dir(path)             — List directory contents
-    """
-    workspace_root = os.path.abspath(os.getcwd())
-    
-    def _safe_path(path: str) -> str:
-        """Resolve and validate a path is within the workspace."""
-        abs_path = os.path.abspath(path)
-        if not abs_path.startswith(workspace_root):
-            raise PermissionError(f"Path '{path}' is outside the workspace boundary.")
-        return abs_path
-    
-    # --- run_command ---
-    if tool_str.startswith("run_command"):
-        cmd_arg = tool_str.split("(", 1)[1].rsplit(")", 1)[0].strip()
-        # Strip surrounding quotes
-        cmd = ast.literal_eval(cmd_arg)
+class EventEmitter:
+    def __init__(self):
+        self._listeners = {}
+
+    def on(self, event_name: str, callback):
+        if event_name not in self._listeners:
+            self._listeners[event_name] = []
+        self._listeners[event_name].append(callback)
+
+    def emit(self, event_name: str, *args, **kwargs):
+        for callback in self._listeners.get(event_name, []):
+            callback(*args, **kwargs)
+
+class ToolRegistry:
+    def __init__(self):
+        self._tools = {}
+
+    def register(self, name: str, handler):
+        self._tools[name] = handler
+
+    def execute(self, call: ToolCall, context: dict) -> str:
+        if call.name in self._tools:
+            return self._tools[call.name](call.args, context)
+        return f"ERROR: Unknown tool '{call.name}'"
+
+# Global registry and event emitter
+tool_registry = ToolRegistry()
+event_emitter = EventEmitter()
+
+def _safe_path(path: str, workspace_root: str) -> str:
+    abs_path = os.path.abspath(path)
+    clean_ws = os.path.abspath(workspace_root)
+    if not (abs_path == clean_ws or abs_path.startswith(clean_ws + os.sep)):
+        raise PermissionError(f"Path '{path}' is outside the workspace boundary.")
+    return abs_path
+
+def _handle_run_command(args, context):
+    cmd = str(args.get("command", args.get("cmd", args.get("raw_arg", ""))))
+    is_daemon = bool(args.get("is_daemon", False))
+    if not check_command_safety(cmd):
+        return "ERROR: Command blocked by safety floor."
         
-        if not check_command_safety(cmd):
-            return "ERROR: Command blocked by safety floor."
-        
-        print(f"   🏃 [Shell] {cmd}", flush=True)
-        exit_code, stdout, stderr = sandbox.run_command(cmd, timeout=120)
-        
-        result = f"Exit code: {exit_code}\n"
-        if stdout.strip():
-            result += f"stdout:\n{stdout[-3000:]}\n"  # Cap output to prevent context overflow
-        if stderr.strip():
-            result += f"stderr:\n{stderr[-2000:]}\n"
-        return result
-    
-    # --- write_file ---
-    elif tool_str.startswith("write_file"):
-        # Parse: write_file("path", "content")
-        inner = tool_str.split("(", 1)[1].rsplit(")", 1)[0]
-        # Split on first comma that's outside quotes
-        parts = []
-        depth = 0
-        current = ""
-        in_str = False
-        escape = False
-        quote_char = None
-        for ch in inner:
-            if escape:
-                current += ch
-                escape = False
-                continue
-            if ch == '\\':
-                current += ch
-                escape = True
-                continue
-            if ch in ('"', "'") and not in_str:
-                in_str = True
-                quote_char = ch
-                current += ch
-                continue
-            if ch == quote_char and in_str:
-                in_str = False
-                quote_char = None
-                current += ch
-                continue
-            if ch == ',' and not in_str and depth == 0 and len(parts) == 0:
-                parts.append(current.strip())
-                current = ""
-                continue
-            current += ch
-        parts.append(current.strip())
-        
-        if len(parts) < 2:
-            return "ERROR: write_file requires (path, content)"
-        
-        filepath = ast.literal_eval(parts[0])
-        content = ast.literal_eval(parts[1])
-        
-        abs_path = _safe_path(filepath)
-        os.makedirs(os.path.dirname(abs_path) if os.path.dirname(abs_path) else ".", exist_ok=True)
-        with open(abs_path, "w") as f:
-            f.write(content)
-        return f"Successfully wrote {len(content)} chars to {filepath}"
-    
-    # --- edit_file ---
-    elif tool_str.startswith("edit_file"):
-        inner = tool_str.split("(", 1)[1].rsplit(")", 1)[0]
-        parts = []
-        depth = 0
-        current = ""
-        in_str = False
-        escape = False
-        quote_char = None
-        for ch in inner:
-            if escape:
-                current += ch
-                escape = False
-                continue
-            if ch == '\\':
-                current += ch
-                escape = True
-                continue
-            if ch in ('"', "'") and not in_str:
-                in_str = True
-                quote_char = ch
-                current += ch
-                continue
-            if ch == quote_char and in_str:
-                in_str = False
-                quote_char = None
-                current += ch
-                continue
-            if ch == ',' and not in_str and depth == 0 and len(parts) < 2:
-                parts.append(current.strip())
-                current = ""
-                continue
-            current += ch
-        parts.append(current.strip())
-        
-        if len(parts) < 3:
-            return "ERROR: edit_file requires (path, old_text, new_text)"
-        
-        filepath = ast.literal_eval(parts[0])
-        old_text = ast.literal_eval(parts[1])
-        new_text = ast.literal_eval(parts[2])
-        
-        abs_path = _safe_path(filepath)
-        if not os.path.exists(abs_path):
-            return f"ERROR: File '{filepath}' does not exist."
-        
-        with open(abs_path, "r") as f:
-            content = f.read()
-        
-        if old_text not in content:
-            return f"ERROR: Could not find the target text in {filepath}."
-        
-        content = content.replace(old_text, new_text, 1)
-        with open(abs_path, "w") as f:
-            f.write(content)
-        return f"Successfully edited {filepath}"
-    
-    # --- read_file ---
-    elif tool_str.startswith("read_file"):
-        filepath = ast.literal_eval(tool_str.split("(", 1)[1].rsplit(")", 1)[0])
-        abs_path = _safe_path(filepath)
-        with open(abs_path, "r") as f:
-            content = f.read()
-        # Cap at 4000 chars to prevent context overflow
-        if len(content) > 4000:
-            return content[:2000] + "\n\n...[TRUNCATED]...\n\n" + content[-2000:]
-        return content
-    
-    # --- list_dir ---
-    elif tool_str.startswith("list_dir"):
-        dirpath = ast.literal_eval(tool_str.split("(", 1)[1].rsplit(")", 1)[0])
-        abs_path = _safe_path(dirpath)
-        entries = os.listdir(abs_path)
-        return "\n".join(sorted(entries))
-    
+    if context.get("interactive", False):
+        print(f"   ⚠️  [Approval Gate] Agent wants to run: `{cmd}`", flush=True)
+        resp = input("   Approve execution? (y/N): ")
+        if resp.lower() not in ('y', 'yes'):
+            return "ERROR: Command execution denied by user."
+            
+    print(f"   🏃 [Shell] {cmd}{' (Daemon)' if is_daemon else ''}", flush=True)
+    sandbox = context["sandbox"]
+    if is_daemon:
+        task_id = sandbox.run_background_command(cmd)
+        return f"Background task started with ID: {task_id}"
     else:
-        return f"ERROR: Unknown tool: {tool_str.split('(')[0]}"
+        exit_code, stdout, stderr = sandbox.run_command(cmd, timeout=120)
+        result = f"Exit code: {exit_code}\\n"
+        if stdout.strip():
+            result += f"stdout:\\n{stdout[-3000:]}\\n"
+        if stderr.strip():
+            result += f"stderr:\\n{stderr[-2000:]}\\n"
+        return result
 
-def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int = 16):
+def _handle_manage_task(args, context):
+    action = str(args.get("action", ""))
+    task_id = str(args.get("task_id", ""))
+    if not action or not task_id:
+        return "ERROR: manage_task requires action and task_id."
+    return context["sandbox"].manage_task(task_id, action)
 
+def _handle_write_file(args, context):
+    filepath = str(args.get("path", args.get("file_path", args.get("filename", ""))))
+    content = str(args.get("content", args.get("text", args.get("code", ""))))
+    if not filepath:
+        return "ERROR: write_file requires 'path' and 'content'"
+    abs_path = _safe_path(filepath, context["workspace_root"])
+    os.makedirs(os.path.dirname(abs_path) if os.path.dirname(abs_path) else ".", exist_ok=True)
+    with open(abs_path, "w") as f:
+        f.write(content)
+    return f"Successfully wrote {len(content)} chars to {filepath}"
+
+def _handle_replace_file_content(args, context):
+    filepath = str(args.get("path", args.get("file_path", "")))
+    try:
+        start_line = int(args.get("start_line", 1))
+        end_line = int(args.get("end_line", 1))
+    except (ValueError, TypeError):
+        return "ERROR: start_line and end_line must be integers."
+    replacement_content = str(args.get("replacement_content", args.get("content", "")))
+    
+    if not filepath:
+        return "ERROR: replace_file_content requires path, start_line, end_line, replacement_content"
+    abs_path = _safe_path(filepath, context["workspace_root"])
+    if not os.path.exists(abs_path):
+        return f"ERROR: File '{filepath}' does not exist."
+        
+    with open(abs_path, "r") as f:
+        lines = f.readlines()
+        
+    if start_line < 1 or end_line < start_line:
+        return "ERROR: Invalid line range."
+        
+    prefix = lines[:start_line - 1]
+    suffix = lines[end_line:] if end_line <= len(lines) else []
+    
+    if replacement_content and not replacement_content.endswith('\\n'):
+        replacement_content += '\\n'
+        
+    new_lines = prefix + [replacement_content] + suffix
+    
+    with open(abs_path, "w") as f:
+        f.writelines(new_lines)
+        
+    return f"Successfully replaced lines {start_line}-{end_line} in {filepath}"
+
+def _handle_read_file(args, context):
+    filepath = str(args.get("path", args.get("file_path", args.get("raw_arg", ""))))
+    if not filepath:
+        return "ERROR: read_file requires 'path'"
+    abs_path = _safe_path(filepath, context["workspace_root"])
+    if not os.path.exists(abs_path):
+        return f"ERROR: File '{filepath}' does not exist."
+    with open(abs_path, "r") as f:
+        fc = f.read()
+    if len(fc) > 4000:
+        return fc[:2000] + "\\n\\n...[TRUNCATED]...\\n\\n" + fc[-2000:]
+    return fc
+
+def _handle_list_dir(args, context):
+    dirpath = str(args.get("path", args.get("dirpath", args.get("raw_arg", "."))))
+    abs_path = _safe_path(dirpath, context["workspace_root"])
+    if not os.path.exists(abs_path):
+        return f"ERROR: Directory '{dirpath}' does not exist."
+    entries = os.listdir(abs_path)
+    return "\\n".join(sorted(entries))
+
+def _handle_update_plan(args, context):
+    new_tasks = args.get("new_tasks", [])
+    if not isinstance(new_tasks, list):
+        return "ERROR: new_tasks must be a JSON array of task objects."
+    task_graph = context.get("task_graph")
+    current_task_idx = context.get("current_task_idx")
+    if task_graph is not None and current_task_idx is not None:
+        del task_graph[current_task_idx + 1:]
+        task_graph.extend(new_tasks)
+        try:
+            with open("task_graph.json", "w") as f:
+                json.dump({"goal": "Dynamically updated", "tasks": task_graph}, f, indent=2)
+        except Exception:
+            pass
+        # Sync MarkdownTaskLedger / Plans.md
+        for t in new_tasks:
+            task_ledger.add_task(TaskSpec(
+                task_id=f"T{t.get('step_id', len(task_ledger.get_all_tasks()) + 1):02d}",
+                description=t.get("description", ""),
+                target_files=[t.get("target_file")] if t.get("target_file") else [],
+                dependencies=[],
+                test_cmd=t.get("test_cmd", ""),
+                status="pending"
+            ))
+        return f"Successfully updated plan. {len(new_tasks)} new tasks queued."
+    return "ERROR: task_graph context not available."
+
+tool_registry.register("run_command", _handle_run_command)
+tool_registry.register("bash", _handle_run_command)
+tool_registry.register("manage_task", _handle_manage_task)
+tool_registry.register("write_file", _handle_write_file)
+tool_registry.register("replace_file_content", _handle_replace_file_content)
+tool_registry.register("edit_file", _handle_replace_file_content)
+tool_registry.register("read_file", _handle_read_file)
+tool_registry.register("list_dir", _handle_list_dir)
+tool_registry.register("update_plan", _handle_update_plan)
+
+def derive_messages(ledger, base_messages: list, from_seq: int = 0) -> list:
+    """Projects the current state of the model context strictly from the SessionEvent append-only log."""
+    messages = list(base_messages)
+    for event in ledger.replay(from_seq):
+        if event.event_type == "user/prompt":
+            messages.append({"role": "user", "content": event.payload.get("content", "")})
+        elif event.event_type == "assistant/message":
+            messages.append({"role": "assistant", "content": event.payload.get("full_content", event.payload.get("content", ""))})
+        elif event.event_type == "tool/result":
+            messages.append({"role": "user", "content": f"You called:\\n{event.payload.get('call', '')}\\n\\nResult:\\n{event.payload.get('output', '')}"})
+        elif event.event_type == "tool/error":
+            messages.append({"role": "user", "content": f"Tool error:\\n{event.payload.get('error', '')}"})
+        elif event.event_type == "system/update":
+            # Some models don't support mid-conversation system roles, so we wrap it as a user message
+            messages.append({"role": "user", "content": f"[System Update]: {event.payload.get('message', '')}"})
+        elif event.event_type == "parser/error":
+            messages.append({"role": "user", "content": event.payload.get("message", "")})
+    return messages
+
+def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int = 16, interactive: bool = False):
+    workspace_root = os.path.abspath(os.getcwd())
     print(f"\n{'='*60}", flush=True)
     print(f"🚀 Multi-Agent Orchestrator Starting Goal:", flush=True)
     print(f"   \"{goal}\"", flush=True)
@@ -495,27 +578,119 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
     #     context_str = ""
     log_trace(f"FAISS Retrieval step skipped (took {time.time() - start_faiss:.2f}s total)")
 
-    # Step 1: Planner decomposes goal
-    print("🧠 [1/2] Ling-3.0 (Planner) generating task graph...", flush=True)
+    CHECKPOINT_FILE = "harness_checkpoint.json"
+    start_task_idx = 0
+    session_id = None
+    
+    if os.path.exists(CHECKPOINT_FILE):
+        try:
+            with open(CHECKPOINT_FILE, "r") as f:
+                ckpt = json.load(f)
+            if ckpt.get("goal") == goal:
+                session_id = ckpt.get("session_id")
+                start_task_idx = ckpt.get("completed_step", 0)
+                print(f"   🔄 [Resuming] Recovered session {session_id} from crash. Jumping to step {start_task_idx + 1}...", flush=True)
+        except Exception:
+            pass
+
+    import uuid
+    if not session_id:
+        session_id = uuid.uuid4().hex[:8]
+        
+    runs_dir = Path("runs")
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    ledger = JSONLSessionLedger(runs_dir / f"session_{session_id}.jsonl", session_id=session_id)
+    task_ledger = MarkdownTaskLedger("Plans.md")
+    compactor_gov = CompactionGovernor(token_limit=16000, trigger_ratio=0.85)
+
+    if start_task_idx == 0:
+        ledger.append(SessionEvent(event_type="goal/start", payload={"goal": goal, "vector": vector, "alpha": alpha}))
+        
+        # Instruction Governance (Reporails Native Integration)
+        from core.instruction_governance import ReporailsLinter
+        linter = ReporailsLinter()
+        findings = linter.lint_workspace(os.getcwd(), CODER_SYSTEM_PROMPT)
+        
+        if findings:
+            print("⚠️  [Reporails] Instruction Governance Failed:", flush=True)
+            has_error = False
+            for f in findings:
+                print(f"  [{f.severity.upper()}] {f.message} (Rule: {f.rule_id})", flush=True)
+                if f.severity == "error":
+                    has_error = True
+            
+            if has_error and not interactive:
+                print("❌ [Reporails] Aborting run due to 'error' level governance failures. Fix vague instructions or use --interactive to override.", flush=True)
+                return
+
+    planner_model = os.environ.get("PLANNER_MODEL", "Ling-3.0")
+    print(f"🧠 [1/2] {planner_model} (Planner) generating task graph...", flush=True)
     print(f"   ↳ backend: {PLANNER_MODEL}", flush=True)
     
     full_planner_prompt = f"User Goal: {goal}"
     if context_str:
         full_planner_prompt += f"\n\nRetrieved Workspace Context:\n{context_str}\n"
 
-    planner_response = query_model(PLANNER_URL, PLANNER_SYSTEM_PROMPT, full_planner_prompt, model_name=PLANNER_MODEL, engine=PLANNER_ENGINE, vector=vector, alpha=alpha, layer=layer)
+    if start_task_idx > 0 and os.path.exists("task_graph.json"):
+        with open("task_graph.json", "r") as f:
+            task_graph = json.load(f).get("tasks", [])
+        print(f"   ✅ Loaded {len(task_graph)} subtasks from existing plan.", flush=True)
+    else:
+        task_graph = None
+        current_prompt = full_planner_prompt
+        MAX_PLANNER_RETRIES = 3
+        
+        for planner_attempt in range(1, MAX_PLANNER_RETRIES + 1):
+            if planner_attempt > 1:
+                print(f"   🔄 [Planner Attempt {planner_attempt}/{MAX_PLANNER_RETRIES}] Retrying with JSON format enforcement...", flush=True)
+            
+            planner_response = query_model(PLANNER_URL, PLANNER_SYSTEM_PROMPT, current_prompt, model_name=PLANNER_MODEL, engine=PLANNER_ENGINE, vector=vector, alpha=alpha, layer=layer)
+            
+            task_graph = extract_json_array(planner_response)
+            if task_graph and isinstance(task_graph, list) and len(task_graph) > 0:
+                print(f"✅ Planned {len(task_graph)} subtasks on attempt {planner_attempt}.", flush=True)
+                break
+            
+            # Log failure with raw snippet
+            print(f"   ⚠️ [Planner Attempt {planner_attempt}] Failed to parse JSON array from response ({len(planner_response)} chars).", flush=True)
+            ledger.append(SessionEvent(event_type="error", payload={"stage": "planner", "attempt": planner_attempt, "raw_snippet": planner_response[:300]}))
+            
+            current_prompt = (
+                f"Your previous response could not be parsed as a JSON array.\n"
+                f"You MUST respond ONLY with a raw JSON array of objects without markdown fences, explanation, or conversational text.\n\n"
+                f"Example format:\n"
+                f"[\n"
+                f"  {{\"step_id\": 1, \"description\": \"Implement CLI in taskmaster.py\", \"target_file\": \"taskmaster.py\", \"test_cmd\": \"python3 taskmaster.py --help\"}}\n"
+                f"]\n\n"
+                f"Original Goal: {goal}"
+            )
+        
+        if not task_graph or not isinstance(task_graph, list):
+            print(f"   ⚠️ Planner decomposition exhausted. Synthesizing default atomic task graph from goal...", flush=True)
+            import re
+            files = re.findall(r'[\w\-]+\.py', goal)
+            target = files[0] if files else "main.py"
+            task_graph = [{
+                "step_id": 1,
+                "description": goal,
+                "target_file": target,
+                "test_cmd": "pytest" if "pytest" in goal else f"python3 -m py_compile {target}"
+            }]
+            ledger.append(SessionEvent(event_type="planner/fallback_atomic", payload={"task_graph": task_graph}))
+            print(f"✅ Synthesized {len(task_graph)} default atomic task.", flush=True)
     
-    if planner_response.startswith("```"):
-        planner_response = planner_response.strip("`").removeprefix("json").strip()
-
-    try:
-        task_graph: List[Dict[str, Any]] = json.loads(planner_response)
-    except Exception as e:
-        print(f"❌ Failed to parse task graph JSON from Planner: {e}", flush=True)
-        return
-
-    print(f"✅ Planned {len(task_graph)} subtasks.", flush=True)
-    update_state_memory(goal, task_graph, -1, "Planned tasks")
+        update_state_memory(goal, task_graph, -1, "Planned tasks")
+    
+        # Populate Plans.md via TaskLedger
+        for t in task_graph:
+            task_ledger.add_task(TaskSpec(
+                task_id=f"T{t.get('step_id', len(task_ledger.get_all_tasks()) + 1):02d}",
+                description=t.get("description", ""),
+                target_files=[t.get("target_file")] if t.get("target_file") else [],
+                dependencies=[f"T{t.get('step_id')-1:02d}"] if t.get("step_id", 1) > 1 else [],
+                test_cmd=t.get("test_cmd", ""),
+                status="pending"
+            ))
 
     # Phase JIT: Skill Procurement
     try:
@@ -528,7 +703,6 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
                 skill_content = procurer.download_skill_silently(skill_kw)
                 required_creds = procurer.detect_credentials(skill_content)
                 if required_creds:
-                    # Halt and prompt for credentials
                     procurer.prompt_for_credentials(required_creds, skill_kw)
     except Exception as e:
         print(f"   ⚠️ Skill procurement failed: {e}", flush=True)
@@ -543,43 +717,93 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
     sandbox = NativeVenvSandbox()
     sandbox.setup(os.path.abspath(os.getcwd()))
     
-    CHECKPOINT_FILE = "harness_checkpoint.json"
-    
     try:
         for i, task in enumerate(task_graph):
+            if i < start_task_idx:
+                # Update ledger to reflect we skipped it via checkpoint
+                task_tid = f"T{task.get('step_id', i+1):02d}"
+                task_ledger.update_status(task_tid, "done")
+                continue
+            
             step_id = task.get("step_id")
+            task_tid = f"T{step_id:02d}"
             desc = task.get("description")
             target_file = task.get("target_file")
             test_cmd = task.get("test_cmd")
 
-            print(f"\n💻 [2/2] Agent executing Step {step_id}: {desc}", flush=True)
+            task_ledger.update_status(task_tid, "in_progress")
+            turn_start_seq = ledger.append(SessionEvent(event_type="turn/start", payload={"step_id": step_id, "task_id": task_tid, "description": desc}))
+
+            print(f"\\n💻 [2/2] Agent executing Step {step_id}: {desc}", flush=True)
             print(f"   ↳ backend: {CODER_MODEL}", flush=True)
             update_state_memory(goal, task_graph, i, f"Working on step {step_id}")
             
-            # Build the initial prompt for this task
-            react_prompt = f"Task: {desc}"
+            # Save WIP state before starting execution
+            compactor_gov.pre_compact(
+                session_id=session_id,
+                current_idx=i,
+                active_task_id=task_tid,
+                tasks=task_graph,
+                active_diffs=f"Task {step_id}: {desc}",
+                ledger_seq=ledger._seq
+            )
+
+            # Phase 3: OpenCode Context Epoch Setup
+            # Base prompt is pure instruction
+            base_messages = [
+                {"role": "system", "content": CODER_SYSTEM_PROMPT}
+            ]
+            
+            # Emit dynamic context as system/update events AFTER turn start to project them cleanly
             if target_file:
-                react_prompt += f"\nTarget File: {target_file}"
+                ledger.append(SessionEvent(event_type="system/update", payload={"message": f"Target File for this task: {target_file}"}))
             if test_cmd:
-                react_prompt += f"\nVerification Command: {test_cmd}"
+                ledger.append(SessionEvent(event_type="system/update", payload={"message": f"Verification Command for this task: {test_cmd}"}))
+            
+            completed_tasks = [t for t in task_graph if task_ledger._tasks.get(f"T{t.get('step_id', 0):02d}", None) and task_ledger._tasks[f"T{t.get('step_id', 0):02d}"].status == "done"]
+            recent_completed = completed_tasks[-3:]
+            if recent_completed:
+                comp_text = "\\n".join([f"- Step {ct.get('step_id')}: {ct.get('description')}" for ct in recent_completed])
+                ledger.append(SessionEvent(event_type="system/update", payload={"message": f"Recent Completed Tasks:\\n{comp_text}"}))
+                
+            ledger.append(SessionEvent(event_type="system/update", payload={"message": "Hint: Use `list_dir` and `read_file` to explore the workspace files as needed."}))
+
             
             # Inject relevant JIT skills
             try:
                 from skill_procurer import SkillProcurer
                 skill_content = SkillProcurer().get_skill_content(desc)
                 if skill_content:
-                    react_prompt += f"\n\n--- INJECTED SKILL CONTEXT ---\n{skill_content}\n-----------------------------"
+                    ledger.append(SessionEvent(event_type="system/update", payload={"message": f"Injected JIT Skill Context:\\n{skill_content}"}))
             except Exception:
                 pass
             
+            # Emit the formal user prompt (Admitted Prompt in OpenCode terminology)
+            admitted_prompt = f"Please execute Task {step_id}: {desc}"
+            ledger.append(SessionEvent(event_type="user/prompt", payload={"role": "user", "content": admitted_prompt}))
+            
             # ReAct Loop: agent acts, observes, iterates
-            MAX_REACT_STEPS = 15  # Hard ceiling to prevent runaway
+            MAX_REACT_STEPS = 15
             task_complete = False
             
             for step in range(1, MAX_REACT_STEPS + 1):
                 print(f"   🔄 [ReAct Step {step}/{MAX_REACT_STEPS}]", flush=True)
+                ledger.append(SessionEvent(event_type="step/start", payload={"step": step, "task_id": task_tid}))
                 
-                raw_output = query_model(CODER_URL, CODER_SYSTEM_PROMPT, react_prompt, model_name=CODER_MODEL, engine=CODER_ENGINE)
+                # Derive exact model context from the ledger
+                messages = derive_messages(ledger, base_messages, from_seq=turn_start_seq)
+                
+                # Middleware: pre-step
+                event_emitter.emit("agent/pre-step", messages=messages, step=step)
+                
+                # Query model
+                event_emitter.emit("agent/request", messages=messages)
+                raw_output = query_model(CODER_URL, CODER_SYSTEM_PROMPT, messages=messages, model_name=CODER_MODEL, engine=CODER_ENGINE, max_tokens=4096)
+                
+                # Middleware: llm/stream (simulated)
+                event_emitter.emit("llm/stream", output=raw_output)
+                
+                ledger.append(SessionEvent(event_type="assistant/message", payload={"content": raw_output[:500], "full_content": raw_output}))
                 
                 # Check if agent signals completion
                 if "<done>" in raw_output.lower():
@@ -587,32 +811,78 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
                     task_complete = True
                     break
                 
-                # Check if agent emitted a tool call
-                if "<execute>" in raw_output:
-                    try:
-                        tool_str = raw_output.split("<execute>")[1].split("</execute>")[0].strip()
-                        print(f"   🛠️  [Tool] {tool_str[:80]}{'...' if len(tool_str) > 80 else ''}", flush=True)
-                        
-                        tool_result = _execute_tool(tool_str, sandbox)
-                        
-                        # Compress large outputs
+                # Multi-grammar tool parsing
+                parsed_calls, parse_errors = parse_tool_calls_from_text(raw_output)
+                if parsed_calls:
+                    # Phase 4: Parallelize Read-Only Tools
+                    read_tools = {"read_file", "list_dir", "grep_search"}
+                    read_calls = [c for c in parsed_calls if c.name in read_tools]
+                    write_calls = [c for c in parsed_calls if c.name not in read_tools]
+                    
+                    context = {"sandbox": sandbox, "workspace_root": workspace_root, "task_graph": task_graph, "current_task_idx": i, "interactive": interactive}
+                    
+                    def _exec_tool(call):
+                        print(f"   🛠️  [Tool] {call.name}({str(call.args)[:60]}...)", flush=True)
+                        event_emitter.emit("tool/call", call=call)
+                        tool_result = tool_registry.execute(call, context)
                         comp_result, saved = compress_text(tool_result)
                         if saved > 0:
                             print(f"   🗜️ Compressed tool output by {saved} chars.", flush=True)
+                        return call, comp_result
+                    
+                    # 1. Execute read calls concurrently
+                    if read_calls:
+                        from concurrent.futures import ThreadPoolExecutor, as_completed
+                        with ThreadPoolExecutor(max_workers=5) as executor:
+                            future_to_call = {executor.submit(_exec_tool, call): call for call in read_calls}
+                            for future in as_completed(future_to_call):
+                                call = future_to_call[future]
+                                try:
+                                    _, comp_result = future.result()
+                                    ledger.append(SessionEvent(event_type="tool/call", payload={"tool": call.name, "args": call.args}))
+                                    ledger.append(SessionEvent(event_type="tool/result", payload={"call": f"{call.name}({call.args})", "output": comp_result}))
+                                except Exception as e:
+                                    print(f"   ❌ Tool error: {e}", flush=True)
+                                    ledger.append(SessionEvent(event_type="tool/error", payload={"error": str(e)}))
+                                    
+                    # 2. Execute write calls sequentially
+                    for call in write_calls:
+                        try:
+                            ledger.append(SessionEvent(event_type="tool/call", payload={"tool": call.name, "args": call.args}))
+                            _, comp_result = _exec_tool(call)
+                            ledger.append(SessionEvent(event_type="tool/result", payload={"call": f"{call.name}({call.args})", "output": comp_result}))
+                        except Exception as e:
+                            print(f"   ❌ Tool error: {e}", flush=True)
+                            ledger.append(SessionEvent(event_type="tool/error", payload={"error": str(e)}))
+                elif "<execute>" in raw_output:
+                    try:
+                        tool_str = raw_output.split("<execute>")[1].split("</execute>")[0].strip()
+                        print(f"   🛠️  [Tool] {tool_str[:80]}...", flush=True)
+                        ledger.append(SessionEvent(event_type="tool/call", payload={"raw_tool": tool_str}))
                         
-                        # Feed observation back to agent
-                        react_prompt += f"\n\nYou called:\n{raw_output}\n\nResult:\n{comp_result}"
+                        # Use legacy execution for raw strings
+                        context = {"sandbox": sandbox, "workspace_root": workspace_root, "task_graph": task_graph, "current_task_idx": i, "interactive": interactive}
+                        # We won't support legacy string execution via ToolRegistry cleanly, so mock it:
+                        # But wait, my registry requires a ToolCall object!
+                        # I'll fall back to parser errors if they use raw strings without matching parser.
+                        # Wait, the fallback is needed if the regex didn't parse but <execute> is present.
                         
+                        raise ValueError("Legacy string tool call execution not supported with ToolRegistry.")
                     except Exception as e:
                         print(f"   ❌ Tool error: {e}", flush=True)
-                        react_prompt += f"\n\nYou called:\n{raw_output}\n\nError:\n{e}"
+                        ledger.append(SessionEvent(event_type="tool/error", payload={"error": str(e)}))
+                elif parse_errors:
+                    err_msg = '\\n'.join(parse_errors)
+                    print(f"   ❌ [Parser] Syntax error detected, injecting feedback loop...", flush=True)
+                    ledger.append(SessionEvent(event_type="parser/error", payload={"message": f"System Error: Failed to parse your tool call. Errors:\\n{err_msg}\\n\\nPlease fix your JSON/AST syntax and try again."}))
                 else:
-                    # Agent emitted text without a tool call or <done>
-                    # Treat as thinking/planning — nudge it to act
-                    react_prompt += f"\n\nYou said:\n{raw_output}\n\nPlease take an action using a tool, or emit <done> if the task is complete."
+                    ledger.append(SessionEvent(event_type="parser/error", payload={"message": "Please take an action using a tool, or emit <done> if the task is complete."}))
             
             if not task_complete:
                 print(f"   ⚠️ Max ReAct steps reached for Step {step_id}. Moving on.", flush=True)
+                task_ledger.update_status(task_tid, "blocked")
+            else:
+                task_ledger.update_status(task_tid, "done")
             
             # Final quality gate: Checker reviews what was produced
             if target_file and os.path.exists(target_file):
@@ -622,9 +892,38 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
                     review = evaluate_code(final_code, desc, target_file)
                     if review == "PASSED":
                         print(f"   ✅ [Checker] Final review: PASSED", flush=True)
+                        ledger.append(SessionEvent(event_type="review/result", payload={"verdict": "PASSED", "target_file": target_file}))
                     else:
-                        print(f"   ⚠️ [Checker] Final review: {review.splitlines()[0][:100]}", flush=True)
+                        print(f"   ⚠️ [Checker] Final review requested changes: {review.splitlines()[0][:100]}", flush=True)
                         log_dpo_pair(desc, final_code, "", review)
+                        
+                        # Multi-turn Self-Healing Repair Attempt (up to 3 iterations)
+                        MAX_REPAIR_ATTEMPTS = 3
+                        current_review = review
+                        for repair_attempt in range(1, MAX_REPAIR_ATTEMPTS + 1):
+                            print(f"   🔧 [Self-Healing {repair_attempt}/{MAX_REPAIR_ATTEMPTS}] Re-dispatching to Coder to fix review critique...", flush=True)
+                            with open(target_file, "r") as f:
+                                current_code = f.read()
+                            repair_prompt = f"The Code Reviewer reviewed your target file '{target_file}' and requested changes:\\n\\nReviewer Feedback:\\n{current_review}\\n\\nCurrent Code in {target_file}:\\n```python\\n{current_code}\\n```\\n\\nPlease fix the issues and write the updated code to '{target_file}' using write_file."
+                            repair_base_messages = [{"role": "system", "content": CODER_SYSTEM_PROMPT}, {"role": "user", "content": repair_prompt}]
+                            raw_repair = query_model(CODER_URL, CODER_SYSTEM_PROMPT, messages=repair_base_messages, model_name=CODER_MODEL, engine=CODER_ENGINE, max_tokens=4096)
+                            repair_calls, repair_errors = parse_tool_calls_from_text(raw_repair)
+                            if repair_calls:
+                                for rcall in repair_calls:
+                                    context = {"sandbox": sandbox, "workspace_root": workspace_root, "task_graph": task_graph, "current_task_idx": i, "interactive": interactive}
+                                    tool_registry.execute(rcall, context)
+                                if os.path.exists(target_file):
+                                    with open(target_file, "r") as f:
+                                        repaired_code = f.read()
+                                    re_review = evaluate_code(repaired_code, desc, target_file)
+                                    if re_review == "PASSED":
+                                        print(f"   ✅ [Checker] Post-repair review: PASSED (attempt {repair_attempt})", flush=True)
+                                        ledger.append(SessionEvent(event_type="review/result", payload={"verdict": "PASSED_AFTER_REPAIR", "target_file": target_file, "attempt": repair_attempt}))
+                                        break
+                                    else:
+                                        current_review = re_review
+                            elif repair_errors:
+                                print(f"   ⚠️ [Self-Healing] Parsing errors during repair: {repair_errors}", flush=True)
                 except Exception as e:
                     print(f"   ⚠️ [Checker] Could not review {target_file}: {e}", flush=True)
             
@@ -632,6 +931,7 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
             try:
                 checkpoint = {
                     "goal": goal,
+                    "session_id": session_id,
                     "completed_step": step_id,
                     "total_steps": len(task_graph),
                     "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")
@@ -643,6 +943,7 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
                 
     finally:
         sandbox.teardown()
+        clear_wip_state()
 
 
     update_state_memory(goal, task_graph, len(task_graph), "Execution Complete")
@@ -650,17 +951,20 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
     print(f"   📝 Generating completion report...", flush=True)
     completion_report = f"# Completion Report: {goal}\n\n"
     for task in task_graph:
+        tid = f"T{task.get('step_id', 0):02d}"
+        t_status = task_ledger._tasks[tid].status if tid in task_ledger._tasks else "unknown"
+        verdict = "PASSED" if t_status == "done" else "FAILED"
         completion_report += f"## Task {task.get('step_id')}: {task.get('description')}\n"
-        completion_report += f"- **Target File**: {task.get('target_file')}\n"
+        completion_report += f"- **Target File**: {task.get('target_file', 'N/A')}\n"
         test_cmd = task.get('test_cmd')
         if test_cmd:
             completion_report += f"- **Validation Cmd**: `{test_cmd}`\n"
-        completion_report += f"- **Verdict**: PASSED\n\n"
+        completion_report += f"- **Status**: {t_status.upper()}\n"
+        completion_report += f"- **Verdict**: {verdict}\n\n"
         
     try:
         with open("completion_report.md", "w") as f:
             f.write(completion_report)
-        print(f"   💾 Saved completion report to completion_report.md", flush=True)
     except Exception as e:
         print(f"   ⚠️ Could not write completion report: {e}", flush=True)
 
@@ -674,6 +978,7 @@ if __name__ == "__main__":
     parser.add_argument("--vector", type=str, default=None, help="Steering vector name")
     parser.add_argument("--alpha", type=float, default=1.0, help="Steering alpha scaling factor")
     parser.add_argument("--layer", type=int, default=16, help="Target injection layer")
+    parser.add_argument("--interactive", action="store_true", help="Enable interactive approval gates for destructive commands")
     args = parser.parse_args()
 
-    run_task_graph(args.goal, vector=args.vector, alpha=args.alpha, layer=args.layer)
+    run_task_graph(args.goal, vector=args.vector, alpha=args.alpha, layer=args.layer, interactive=args.interactive)

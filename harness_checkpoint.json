@@ -1,6 +1,0 @@
-{
-  "goal": "Create a Python module called todo_app.py with a TodoList class that supports add, remove, list, and mark_complete operations. Include a test file test_todo.py with at least 5 unit tests. Run the tests to verify.",
-  "completed_step": 3,
-  "total_steps": 3,
-  "timestamp": "2026-08-10T01:50:54"
-}

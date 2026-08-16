@@ -1,15 +1,8 @@
-# Completion Report: Create a Python module called todo_app.py with a TodoList class that supports add, remove, list, and mark_complete operations. Include a test file test_todo.py with at least 5 unit tests. Run the tests to verify.
+# Completion Report: Create a string_helper.py file with a function that reverses a string, and follow STRICT_RULES.md exactly.
 
-## Task 1: Create todo_app.py with a TodoList class supporting add, remove, list, and mark_complete operations.
-- **Target File**: todo_app.py
-- **Verdict**: PASSED
-
-## Task 2: Create test_todo.py with at least 5 unit tests for the TodoList class methods.
-- **Target File**: test_todo.py
-- **Verdict**: PASSED
-
-## Task 3: Run the tests using pytest to verify the implementation.
-- **Target File**: None
-- **Validation Cmd**: `pytest test_todo.py`
+## Task 1: Create string_helper.py with a reverse_string function that takes a string and returns its reverse, including type hints and docstring.
+- **Target File**: string_helper.py
+- **Validation Cmd**: `python -m py_compile string_helper.py`
+- **Status**: DONE
 - **Verdict**: PASSED
 

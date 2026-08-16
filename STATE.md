@@ -1,9 +1,9 @@
 # Loop Engineering State Memory
 
-**Goal**: Create a Python module called todo_app.py with a TodoList class that supports add, remove, list, and mark_complete operations. Include a test file test_todo.py with at least 5 unit tests. Run the tests to verify.
-**Status**: Execution Complete
+**Goal**: Create a math_helper.py file with add(a, b), subtract(a, b), and multiply(a, b). Then write test_math_helper.py with pytest tests to verify all 3 functions work.
+**Status**: Working on step 1
 
 ## Tasks:
-- [x] Step 1: Create todo_app.py with a TodoList class supporting add, remove, list, and mark_complete operations.
-- [x] Step 2: Create test_todo.py with at least 5 unit tests for the TodoList class methods.
-- [x] Step 3: Run the tests using pytest to verify the implementation.
+- [/] Step 1: Create the math_helper.py file with add, subtract, and multiply functions
+- [ ] Step 2: Write test_math_helper.py with pytest tests to verify all 3 functions
+- [ ] Step 3: Verify the output of the test_math_helper.py file

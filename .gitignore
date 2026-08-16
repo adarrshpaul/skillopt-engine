@@ -26,6 +26,8 @@ skillopt-env/
 runs/
 .test_venv/
 .harness_wip.json
+.repomap_cache.json
+Modelfile.ornith
 harness_checkpoint.json
 Plans.md
 string_helper.py

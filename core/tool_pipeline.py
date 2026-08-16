@@ -243,13 +243,39 @@ def _parse_args_string(tool_name: str, args_str: str) -> Dict[str, Any]:
     except Exception:
         pass
 
+    # Fallback for multi-line write_file/edit_file with literal unescaped newlines in quotes
+    if tool_name in ("write_file", "edit_file") and (args_str.startswith('"') or args_str.startswith("'")):
+        try:
+            q = args_str[0]
+            end_q = args_str.find(q, 1)
+            if end_q != -1:
+                path = args_str[1:end_q]
+                rest = args_str[end_q+1:].strip()
+                if rest.startswith(","):
+                    content_raw = rest[1:].strip()
+                    if content_raw.startswith('"""') and content_raw.endswith('"""') and len(content_raw) >= 6:
+                        content = content_raw[3:-3]
+                    elif content_raw.startswith("'''") and content_raw.endswith("'''") and len(content_raw) >= 6:
+                        content = content_raw[3:-3]
+                    elif (content_raw.startswith('"') and content_raw.endswith('"')) or (content_raw.startswith("'") and content_raw.endswith("'")):
+                        content = content_raw[1:-1]
+                    else:
+                        content = content_raw
+                    # Unescape standard escape sequences if encoded
+                    content = content.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"').replace("\\'", "'")
+                    return {"path": path, "content": content}
+        except Exception:
+            pass
+
     # Simple single string argument (e.g. run_command("ls -la") or run_command('ls -la'))
     if (args_str.startswith('"') and args_str.endswith('"')) or (args_str.startswith("'") and args_str.endswith("'")):
         clean_str = args_str[1:-1].replace('\\"', '"').replace("\\'", "'")
         if tool_name in ("run_command", "bash", "execute_bash", "exec"):
             return {"command": clean_str}
-        if tool_name in ("read_file", "list_dir"):
+        if tool_name in ("read_file", "list_dir", "document_symbols"):
             return {"path": clean_str}
+        if tool_name in ("find_definition", "find_references", "hover"):
+            return {"symbol": clean_str}
 
     # Fallback Strategy: Named args key=value parsing via regex
     args: Dict[str, Any] = {}
@@ -263,6 +289,8 @@ def _parse_args_string(tool_name: str, args_str: str) -> Dict[str, Any]:
     if not args and args_str:
         if tool_name in ("run_command", "bash", "execute_bash", "exec"):
             return {"command": args_str.strip('"\'')}
+        if tool_name in ("find_definition", "find_references", "hover"):
+            return {"symbol": args_str.strip('"\'')}
         return {"raw_arg": args_str.strip('"\'')}
 
     return args

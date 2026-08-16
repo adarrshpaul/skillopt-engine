@@ -38,14 +38,14 @@ class TestToolPipeline(unittest.TestCase):
 
     def test_multi_grammar_parsing_execute_tags(self):
         text = 'I will run the test now.\n<execute>run_command("pytest tests/")</execute>'
-        calls = parse_tool_calls_from_text(text)
+        calls, errors = parse_tool_calls_from_text(text)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0].name, "run_command")
         self.assertEqual(calls[0].args.get("command"), "pytest tests/")
 
     def test_multi_grammar_parsing_named_args(self):
         text = '<execute>write_file(path="app.py", content="print(\'hello\')")</execute>'
-        calls = parse_tool_calls_from_text(text)
+        calls, errors = parse_tool_calls_from_text(text)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0].name, "write_file")
         self.assertEqual(calls[0].args.get("path"), "app.py")
@@ -53,11 +53,30 @@ class TestToolPipeline(unittest.TestCase):
 
     def test_multi_grammar_parsing_positional_write_file(self):
         text = '<execute>write_file("app.py", "import flask\\napp = flask.Flask(__name__)\\n\\ndef get_status():\\n    return {\'status\': \'ok\'}\\n")</execute>'
-        calls = parse_tool_calls_from_text(text)
+        calls, errors = parse_tool_calls_from_text(text)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0].name, "write_file")
         self.assertEqual(calls[0].args.get("path"), "app.py")
         self.assertIn("def get_status()", calls[0].args.get("content"))
+
+    def test_multi_grammar_parsing_raw_multiline_write_file(self):
+        text = (
+            '<execute>write_file("taskmaster.py", """import json\nimport sys\n'
+            'def load():\n    return []\n""")</execute>'
+        )
+        calls, errors = parse_tool_calls_from_text(text)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].name, "write_file")
+        self.assertEqual(calls[0].args.get("path"), "taskmaster.py")
+        self.assertIn("def load():", calls[0].args.get("content"))
+
+    def test_lsp_tools_parsing(self):
+        text = '<execute>find_definition("PaymentService", "service.py")</execute>'
+        calls, errors = parse_tool_calls_from_text(text)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].name, "find_definition")
+        self.assertEqual(calls[0].args.get("symbol"), "PaymentService")
+        self.assertEqual(calls[0].args.get("file_path"), "service.py")
 
 if __name__ == "__main__":
     unittest.main()

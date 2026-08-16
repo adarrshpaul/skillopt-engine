@@ -615,9 +615,7 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
     #     else:
     #         print(f"   ⚠️ No relevant context found.", flush=True)
     # except Exception as e:
-    #     print(f"   ❌ FAISS Retrieval failed: {e}", flush=True)
-    #     context_str = ""
-    log_trace(f"FAISS Retrieval step skipped (took {time.time() - start_faiss:.2f}s total)")
+    log_trace("FAISS Retrieval step skipped (16GB RAM mode)")
 
     CHECKPOINT_FILE = "harness_checkpoint.json"
     start_task_idx = 0
@@ -906,29 +904,12 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
                         print(f"   🗜️ [In-Loop Compaction] Tier 1 evicted {compact_stats['tier1_evictions']} stale tool payload(s).", flush=True)
                     if compact_stats.get("tier2_triggered", False):
                         print(f"   🧠 [In-Loop Compaction] Tier 2 injected 5-section context checkpoint.", flush=True)
-                elif "<execute>" in raw_output:
-                    try:
-                        tool_str = raw_output.split("<execute>")[1].split("</execute>")[0].strip()
-                        print(f"   🛠️  [Tool] {tool_str[:80]}...", flush=True)
-                        ledger.append(SessionEvent(event_type="tool/call", payload={"raw_tool": tool_str}))
-                        
-                        # Use legacy execution for raw strings
-                        context = {"sandbox": sandbox, "workspace_root": workspace_root, "task_graph": task_graph, "current_task_idx": i, "interactive": interactive}
-                        # We won't support legacy string execution via ToolRegistry cleanly, so mock it:
-                        # But wait, my registry requires a ToolCall object!
-                        # I'll fall back to parser errors if they use raw strings without matching parser.
-                        # Wait, the fallback is needed if the regex didn't parse but <execute> is present.
-                        
-                        raise ValueError("Legacy string tool call execution not supported with ToolRegistry.")
-                    except Exception as e:
-                        print(f"   ❌ Tool error: {e}", flush=True)
-                        ledger.append(SessionEvent(event_type="tool/error", payload={"error": str(e)}))
                 elif parse_errors:
-                    err_msg = '\\n'.join(parse_errors)
+                    err_msg = '\n'.join(parse_errors)
                     print(f"   ❌ [Parser] Syntax error detected, injecting feedback loop...", flush=True)
-                    ledger.append(SessionEvent(event_type="parser/error", payload={"message": f"System Error: Failed to parse your tool call. Errors:\\n{err_msg}\\n\\nPlease fix your JSON/AST syntax and try again."}))
+                    ledger.append(SessionEvent(event_type="parser/error", payload={"message": f"System Error: Failed to parse your tool call. Errors:\n{err_msg}\n\nPlease format your tool call as: <execute>tool_name(param1=\"value1\", param2=\"value2\")</execute> and try again."}))
                 else:
-                    ledger.append(SessionEvent(event_type="parser/error", payload={"message": "Please take an action using a tool, or emit <done> if the task is complete."}))
+                    ledger.append(SessionEvent(event_type="parser/error", payload={"message": "Please take an action using an available tool inside <execute>tool_name(...)</execute>, or emit <done> if the task is complete."}))
             
             if not task_complete:
                 print(f"   ⚠️ Max ReAct steps reached for Step {step_id}. Moving on.", flush=True)

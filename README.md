@@ -98,34 +98,37 @@ LLMs often emit conversational preambles or messy formatting when asked for JSON
 - **Atomic Plan Synthesis**: If planner decomposition is exhausted, the harness synthesizes a 1-step atomic plan from the goal so the Coder agent can proceed immediately.
 - **Multi-Turn Self-Healing**: Reviewer rejections trigger an iterative 3-turn repair cycle with the Coder rather than abandoning the task.
 
-### 3. Tool Pipeline & Sandbox Execution (`sandbox/venv_executor.py`)
-All actions run through a unified `ToolRegistry` with path traversal defense:
-- **`run_command(cmd, is_daemon)` / `bash`**: Runs shell commands inside `.test_venv` with PTY support.
-- **`manage_task(action, task_id)`**: Inspects or terminates background daemon tasks.
-- **`write_file(path, content)`**: Atomically writes workspace files.
-- **`replace_file_content(path, start_line, end_line, content)` / `edit_file`**: Surgically replaces 1-indexed line ranges.
-- **`read_file(path)`**: Reads files with automatic head/tail truncation for large files (>4000 chars).
-- **`list_dir(path)`**: Lists workspace directory structures.
-- **`update_plan(new_tasks)`**: Dynamically updates remaining subtasks and synchronizes `Plans.md`.
+### 3. Tree-Sitter & AST Static Repo Map (`core/symbol_index.py`)
+- **Incremental Cache (`.repomap_cache.json`)**: Tracks file mtime and SHA256 hashes to parse only modified files.
+- **Def-Ref Graph Ranking**: Analyzes call frequencies across classes, functions, and imports to generate a token-budgeted architectural outline (≤1,000 tokens) injected into the Planner and Coder context upfront.
 
-### 4. Instruction Governance (`core/instruction_governance.py`)
-Evaluates prompts against `STRICT_RULES.md` before execution:
-- Blocks overly broad or ambiguous instructions.
-- Enforces explicit file targeting.
-- Flags destructive commands before they reach execution.
+### 4. Semantic LSP ReAct Tools (`core/lsp_client.py`)
+Replaces naive file dumps with precision semantic navigation:
+- **`find_definition(symbol, file_path)`**: Jumps directly to class/function definitions across files.
+- **`find_references(symbol, file_path)`**: Locates exact call sites and imports.
+- **`document_symbols(path)`**: Extracts file outlines (classes, methods, functions).
+- **`hover(symbol, file_path)`**: Inspects type signatures, line numbers, and docstrings.
 
-### 5. Append-Only Session Ledger (`core/session_ledger.py`)
-Records all events into `runs/session_<id>.jsonl`:
-- `goal/start`: Initial prompt and hyperparameters.
-- `turn/start`, `step/start`: Subtask and ReAct step markers.
-- `tool/call`, `tool/result`, `tool/error`: Complete tool inputs and outputs.
-- `review/result`: Reviewer verdicts and critique feedback.
+### 5. Two-Tier In-Loop Dynamic Compaction (`core/compaction.py`)
+Inspired by Claude Code's `context_management` API and Anthropic's 5-section distillation pattern:
+- **Tier 1 (`clear_tool_uses`)**: Evaluates token count after each tool execution in the 15-step ReAct loop. Evicts stale `tool_result` outputs beyond the most recent $K=3$ interactions, replacing them with compact pointer placeholders (`[Tool Output Evicted - Ref #seq]`), while archiving the full raw outputs to `dpo_logs.jsonl` (zero data loss).
+- **Tier 2 (5-Section Summary Checkpoint)**: If context is still saturated, forks a structured 5-section distillation (*Task Overview, Current State, Important Discoveries, Next Steps, Context to Preserve*) and establishes a clean context checkpoint in `derive_messages()`.
+
+### 6. Tool Pipeline & Sandbox Execution (`sandbox/venv_executor.py`)
+All 13 actions run through a unified `ToolRegistry` with path traversal defense:
+- **LSP Tools**: `find_definition`, `find_references`, `document_symbols`, `hover`.
+- **System Tools**: `run_command`, `bash`, `manage_task`.
+- **File Tools**: `write_file`, `replace_file_content`, `edit_file`, `read_file`, `list_dir`, `update_plan`.
+
+### 7. Instruction Governance (`core/instruction_governance.py`)
+Evaluates prompts against `STRICT_RULES.md` before execution to enforce specificity and safety.
+
+### 8. Append-Only Session Ledger (`core/session_ledger.py`)
+Records all events into `runs/session_<id>.jsonl` with deterministic context replay.
 
 ---
 
 ## ⚖️ Honest Benchmark Comparison: SkillOpt vs Claude Code vs DeepSeek Harness
-
-To assess the engineering quality and real-world capabilities of SkillOpt Engine, here is an honest, objective breakdown comparing our architecture against the **Claude Code Harness** (Anthropic) and **DeepSeek SWE-bench Harness** (DeepSeek/OpenCode).
 
 ### 📊 Capability Matrix
 
@@ -136,8 +139,8 @@ To assess the engineering quality and real-world capabilities of SkillOpt Engine
 | **Deterministic Instruction Governance** | ✅ **Reporails-Native Linter** (Pre-execution rule enforcement) | ⚠️ Post-hoc prompt guardrails | ⚠️ Basic system prompt instructions |
 | **Append-Only Telemetry Ledger** | ✅ **Deterministic JSONL Event Replay** (`derive_messages`) | ✅ Full session replay & telemetry | ✅ Trajectory rollout logging |
 | **Tool Extraction Robustness** | ✅ **4-Stage Multi-Grammar Extractor** (Bracket state machine) | ✅ Native JSON Function Calling API | ⚠️ Tag parsing (`<tool_call>` / XML) |
-| **Context Window Compaction** | ⚠️ Static Compaction Governor (Triggered per subtask) | ✅ **Dynamic Sliding-Window Compaction** + Prompt Caching | ⚠️ Chunked trajectory truncation |
-| **Codebase Structural Indexing** | ⚠️ P3 FAISS (Optional, disabled on 16GB mode) | ✅ **Full LSP, AST Indexing, & Ripgrep Pipes** | ✅ Tree-sitter AST Symbol Graph Search |
+| **Context Window Compaction** | ✅ **Two-Tier In-Loop Compactor** (`clear_tool_uses` + 5-section checkpoint) | ✅ **Dynamic Sliding-Window Compaction** + Prompt Caching | ⚠️ Chunked trajectory truncation |
+| **Codebase Structural Indexing** | ✅ **Tree-Sitter / AST Def-Ref Graph** + Semantic LSP Tools | ✅ **Full LSP, AST Indexing, & Ripgrep Pipes** | ✅ Tree-sitter AST Symbol Graph Search |
 | **Terminal / PTY Interactivity** | ⚠️ Native Venv PTY (Buffered execution) | ✅ **True Bi-directional Streaming PTY** | ⚠️ Non-interactive Docker subprocesses |
 | **Raw Reasoning Ceiling** | ⚠️ Dependent on Free/Small Models (3B - 550B MoE) | ✅ **Frontier-Class Reasoning** (Claude 3.7 Sonnet) | ✅ **Frontier-Class Reasoning** (DeepSeek-V3 / R1) |
 

@@ -226,9 +226,14 @@ def _parse_args_string(tool_name: str, args_str: str) -> Dict[str, Any]:
             elif tool_name in ("run_command", "bash", "execute_bash", "exec"):
                 if len(pos_args) >= 1 and "command" not in result:
                     result["command"] = pos_args[0]
-            elif tool_name in ("read_file", "list_dir"):
+            elif tool_name in ("read_file", "list_dir", "document_symbols"):
                 if len(pos_args) >= 1 and "path" not in result:
                     result["path"] = pos_args[0]
+            elif tool_name in ("find_definition", "find_references", "hover"):
+                if len(pos_args) >= 1 and "symbol" not in result:
+                    result["symbol"] = pos_args[0]
+                if len(pos_args) >= 2 and "file_path" not in result:
+                    result["file_path"] = pos_args[1]
             else:
                 for idx, pa in enumerate(pos_args):
                     result[f"arg_{idx}"] = pa

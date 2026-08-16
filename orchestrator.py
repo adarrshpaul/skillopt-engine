@@ -35,6 +35,13 @@ from core.tool_pipeline import ToolPipeline, ToolCall, ToolResult, parse_tool_ca
 from core.task_ledger import MarkdownTaskLedger, TaskSpec
 from core.compaction import CompactionGovernor, save_wip_state, restore_wip_state, clear_wip_state
 from core.output_extractor import extract_json_array, extract_json_object
+from core.lsp_client import (
+    handle_find_definition,
+    handle_find_references,
+    handle_document_symbols,
+    handle_hover,
+    get_symbol_index
+)
 
 class InfraError(Exception):
     """Raised when hardware or infrastructure fails (e.g. memory eviction timeout)."""
@@ -98,40 +105,50 @@ You solve coding tasks by iterating: think about what to do, take an action, obs
 ## Available Tools
 You have these tools. Emit ONE tool call at a time inside <execute> tags. The system returns the output, then you continue.
 
-1. **run_command(cmd, is_daemon=False)** — Run a shell command. Set is_daemon=True for long-running servers.
-   <execute>run_command("npm install express")</execute>
-   <execute>run_command("python server.py", True)</execute>
+1. **find_definition(symbol, file_path=None)** — Jump directly to class, function, or method definition.
+   <execute>find_definition("CompactionGovernor")</execute>
 
-2. **manage_task(action, task_id)** — Manage background tasks. Action can be "status" or "kill".
+2. **find_references(symbol, file_path=None)** — Find all callers and call sites of a symbol across the codebase.
+   <execute>find_references("save_wip_state")</execute>
+
+3. **document_symbols(path)** — Get the full outline (classes, methods, functions) of a file.
+   <execute>document_symbols("core/compaction.py")</execute>
+
+4. **hover(symbol, file_path=None)** — View type signature, docstring, and line location of a symbol.
+   <execute>hover("estimate_tokens")</execute>
+
+5. **run_command(cmd, is_daemon=False)** — Run a shell command. Set is_daemon=True for long-running servers.
+   <execute>run_command("pytest tests/ -v")</execute>
+
+6. **manage_task(action, task_id)** — Manage background tasks. Action can be "status" or "kill".
    <execute>manage_task("status", "task_1")</execute>
 
-3. **write_file(path, content)** — Create or overwrite a file with the given content.
+7. **write_file(path, content)** — Create or overwrite a file with the given content.
    <execute>write_file("src/app.py", "import flask\\napp = flask.Flask(__name__)\\n")</execute>
 
-4. **replace_file_content(path, start_line, end_line, replacement_content)** — Surgically replace lines in an existing file. Lines are 1-indexed.
+8. **replace_file_content(path, start_line, end_line, replacement_content)** — Surgically replace lines in an existing file. Lines are 1-indexed.
    <execute>replace_file_content("src/app.py", 10, 15, "def new_func():\\n    pass\\n")</execute>
 
-5. **read_file(path)** — Read the contents of a file.
-   <execute>read_file("src/app.py")</execute>
+9. **read_file(path)** — Read file content (fallback for text/yaml/json/md configs).
+   <execute>read_file("config.yaml")</execute>
 
-6. **list_dir(path)** — List directory contents.
+10. **list_dir(path)** — List directory contents.
    <execute>list_dir(".")</execute>
 
-7. **update_plan(new_tasks)** — Replace all remaining upcoming tasks with a new list of tasks. Each task must have {"step_id": int, "description": "...", "target_file": "..."}.
+11. **update_plan(new_tasks)** — Replace all remaining upcoming tasks with a new list of tasks. Each task must have {"step_id": int, "description": "...", "target_file": "..."}.
    <execute>update_plan([{"step_id": 3, "description": "Refactor router", "target_file": "router.py"}])</execute>
 
 ## Workflow
-1. Read the task description carefully.
-2. Explore the workspace with list_dir and read_file to understand what exists.
-3. Write code using write_file or replace_file_content.
-4. Run tests using run_command to verify your work.
-5. If tests fail, read the error output, fix the code, and re-run.
-6. When everything passes, emit <done> to signal completion.
+1. Use `find_definition`, `find_references`, and `document_symbols` to inspect code symbols semantically.
+2. Write code using write_file or replace_file_content.
+3. Run tests using run_command to verify your work.
+4. If tests fail, read the error output, fix the code, and re-run.
+5. When everything passes, emit <done> to signal completion.
 
 ## Rules
+- ALWAYS prefer find_definition and find_references over reading entire files.
 - NEVER output raw code without using write_file. All code must be written to files via the tool.
 - ALWAYS run tests after writing code to verify correctness.
-- If a test fails, fix the issue and re-run. Do not give up.
 - Emit exactly ONE tool call per response. Wait for the result before continuing.
 - When the task is fully complete and tests pass, emit <done> on its own line.
 """
@@ -520,19 +537,40 @@ tool_registry.register("edit_file", _handle_replace_file_content)
 tool_registry.register("read_file", _handle_read_file)
 tool_registry.register("list_dir", _handle_list_dir)
 tool_registry.register("update_plan", _handle_update_plan)
+tool_registry.register("find_definition", handle_find_definition)
+tool_registry.register("find_references", handle_find_references)
+tool_registry.register("document_symbols", handle_document_symbols)
+tool_registry.register("hover", handle_hover)
 
 def derive_messages(ledger, base_messages: list, from_seq: int = 0) -> list:
     """Projects the current state of the model context strictly from the SessionEvent append-only log."""
+    events = ledger.replay(from_seq)
+    
+    # Collect all sequence numbers of tool results evicted by Tier 1 compaction
+    evicted_seqs = set()
+    for event in events:
+        if event.event_type == "compaction/evict_tools":
+            evicted_seqs.update(event.payload.get("evicted_seqs", []))
+
     messages = list(base_messages)
-    for event in ledger.replay(from_seq):
-        if event.event_type == "user/prompt":
+    for event in events:
+        if event.event_type == "compaction/checkpoint":
+            # Tier 2 summary checkpoint: condense preceding context cleanly
+            messages = list(base_messages)
+            messages.append({"role": "user", "content": f"[SYSTEM: CONTEXT COMPACTED SUMMARY CHECKPOINT]:\n{event.payload.get('summary', '')}"})
+        elif event.event_type == "user/prompt":
             messages.append({"role": "user", "content": event.payload.get("content", "")})
         elif event.event_type == "assistant/message":
             messages.append({"role": "assistant", "content": event.payload.get("full_content", event.payload.get("content", ""))})
         elif event.event_type == "tool/result":
-            messages.append({"role": "user", "content": f"You called:\\n{event.payload.get('call', '')}\\n\\nResult:\\n{event.payload.get('output', '')}"})
+            if event.seq in evicted_seqs:
+                call_sig = str(event.payload.get("call", ""))[:40]
+                placeholder = f"[Tool Output Evicted - Ref #{event.seq} ({call_sig}) - Full output archived in telemetry]"
+                messages.append({"role": "user", "content": f"You called:\n{event.payload.get('call', '')}\n\nResult:\n{placeholder}"})
+            else:
+                messages.append({"role": "user", "content": f"You called:\n{event.payload.get('call', '')}\n\nResult:\n{event.payload.get('output', '')}"})
         elif event.event_type == "tool/error":
-            messages.append({"role": "user", "content": f"Tool error:\\n{event.payload.get('error', '')}"})
+            messages.append({"role": "user", "content": f"Tool error:\n{event.payload.get('error', '')}"})
         elif event.event_type == "system/update":
             # Some models don't support mid-conversation system roles, so we wrap it as a user message
             messages.append({"role": "user", "content": f"[System Update]: {event.payload.get('message', '')}"})
@@ -549,10 +587,20 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
         print(f"   🎛️ Active Steering: Vector='{vector}', Alpha={alpha}, Layer=L{layer}", flush=True)
     print(f"{'='*60}\n", flush=True)
 
-    # Phase 4.1: FAISS Semantic Context Retrieval
-    print("🔍 [0/2] P3 FAISS Worker retrieving workspace context... (SKIPPED FOR 16GB RAM MODE)", flush=True)
-    start_faiss = time.time()
+    # Phase 0: Incremental AST Static Repo Map (Tier A Code Intelligence)
     context_str = ""
+    try:
+        sym_index = get_symbol_index(workspace_root)
+        sym_index.scan_workspace()
+        repo_map = sym_index.get_condensed_repo_map(max_tokens=1000)
+        if repo_map:
+            print(f"🗺️  [Symbol Index] Injected static repository symbol map ({len(sym_index.definitions)} defs indexed).", flush=True)
+            context_str = repo_map
+    except Exception as e:
+        print(f"   ⚠️ Symbol indexing note: {e}", flush=True)
+
+    # Phase 4.1: FAISS Semantic Context Retrieval (Optional domain lookup)
+    print("🔍 [0/2] P3 FAISS Worker retrieving workspace context... (SKIPPED FOR 16GB RAM MODE)", flush=True)
     # try:
     #     worker = P3Worker()
     #     context_docs = worker.query(goal, k=3)
@@ -807,8 +855,8 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
                 # Multi-grammar tool parsing
                 parsed_calls, parse_errors = parse_tool_calls_from_text(raw_output)
                 if parsed_calls:
-                    # Phase 4: Parallelize Read-Only Tools
-                    read_tools = {"read_file", "list_dir", "grep_search"}
+                    # Phase 4: Parallelize Read-Only Tools (including AST/LSP)
+                    read_tools = {"read_file", "list_dir", "grep_search", "find_definition", "find_references", "document_symbols", "hover"}
                     read_calls = [c for c in parsed_calls if c.name in read_tools]
                     write_calls = [c for c in parsed_calls if c.name not in read_tools]
                     
@@ -847,6 +895,17 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
                         except Exception as e:
                             print(f"   ❌ Tool error: {e}", flush=True)
                             ledger.append(SessionEvent(event_type="tool/error", payload={"error": str(e)}))
+
+                    # In-Loop Dynamic Compaction Check (Tier 1 clear_tool_uses & Tier 2 checkpoint)
+                    compact_stats = compactor_gov.evaluate_in_loop_compaction(
+                        ledger=ledger,
+                        turn_start_seq=turn_start_seq,
+                        current_messages=messages
+                    )
+                    if compact_stats.get("tier1_evictions", 0) > 0:
+                        print(f"   🗜️ [In-Loop Compaction] Tier 1 evicted {compact_stats['tier1_evictions']} stale tool payload(s).", flush=True)
+                    if compact_stats.get("tier2_triggered", False):
+                        print(f"   🧠 [In-Loop Compaction] Tier 2 injected 5-section context checkpoint.", flush=True)
                 elif "<execute>" in raw_output:
                     try:
                         tool_str = raw_output.split("<execute>")[1].split("</execute>")[0].strip()

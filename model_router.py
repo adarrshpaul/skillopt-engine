@@ -40,28 +40,28 @@ class ModelEndpoint:
 # Role registry with environment override support
 _REGISTRY: Dict[str, ModelEndpoint] = {
     "planner": ModelEndpoint(
-        model=os.environ.get("PLANNER_MODEL", "mlx-community/Ling-mini-2.0-4bit"),
-        engine=os.environ.get("PLANNER_ENGINE", "mlx"),
-        url=os.environ.get("PLANNER_URL", "http://localhost:8801/v1"),
+        model=os.environ.get("PLANNER_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free"),
+        engine=os.environ.get("PLANNER_ENGINE", "openrouter"),
+        url=os.environ.get("PLANNER_URL", "https://openrouter.ai/api/v1"),
         role_description="Decomposes goals into task graphs. Orchestration only.",
     ),
     "reviewer": ModelEndpoint(
-        model=os.environ.get("REVIEWER_MODEL", "mlx-community/Ling-mini-2.0-4bit"),
-        engine=os.environ.get("REVIEWER_ENGINE", "mlx"),
-        url=os.environ.get("REVIEWER_URL", "http://localhost:8801/v1"),
+        model=os.environ.get("REVIEWER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"),
+        engine=os.environ.get("REVIEWER_ENGINE", "openrouter"),
+        url=os.environ.get("REVIEWER_URL", "https://openrouter.ai/api/v1"),
         role_description="Reviews generated code for correctness. Does not write code.",
     ),
     "coder": ModelEndpoint(
-        model=os.environ.get("CODER_MODEL", "mlx-community/Ling-mini-2.0-4bit"),
-        engine=os.environ.get("CODER_ENGINE", "mlx"),
-        url=os.environ.get("CODER_URL", "http://localhost:8801/v1"),
+        model=os.environ.get("CODER_MODEL", "poolside/laguna-s-2.1:free"),
+        engine=os.environ.get("CODER_ENGINE", "openrouter"),
+        url=os.environ.get("CODER_URL", "https://openrouter.ai/api/v1"),
         role_description="Generates code from task specifications.",
     ),
     "fallback": ModelEndpoint(
-        model=os.environ.get("FALLBACK_MODEL", "mlx-community/Ling-mini-2.0-4bit"),
+        model=os.environ.get("FALLBACK_MODEL", "mlx-community/Nanbeige4.1-3B-heretic-4bit"),
         engine=os.environ.get("FALLBACK_ENGINE", "mlx"),
         url=os.environ.get("FALLBACK_URL", "http://localhost:8801/v1"),
-        role_description="Fallback coder when primary is unavailable.",
+        role_description="Local MLX fallback model on Apple Silicon when cloud limits are reached.",
     ),
     "optimizer": ModelEndpoint(
         model=os.environ.get("OPTIMIZER_MODEL", "gpt-4o"),

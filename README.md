@@ -1,148 +1,110 @@
 # SkillOpt Engine
 
-The SkillOpt Engine is a disciplined, Claude Code Harness-inspired governance framework for multi-agent coding workflows. It provides strict routing, safety guarantees, and evidentiary test pipelines for running local AI models on hardware-constrained systems, specifically targeting Apple Silicon with a strict **16GB RAM limit**.
-
-## The Novel Intention
-The core thesis of the SkillOpt Engine is that **we can achieve SWE-bench level multi-agent reasoning on consumer hardware (16GB RAM) without sacrificing context or model capability.** 
-Instead of relying on cloud APIs or attempting to load massive models concurrently (which causes catastrophic disk swapping and freezes), SkillOpt uses a highly orchestrated **Maker-Checker ping-pong architecture**. It systematically spins up, queries, and evicts large models (Ling-mini-2.0 and Ornith-9B) sequentially in the same shared memory space, achieving enterprise-grade multi-agent reasoning entirely locally.
+SkillOpt Engine is an agentic coding harness and multi-agent orchestrator optimized for Apple Silicon and OpenRouter free-tier models. It features heterogeneous role routing, intelligent failover (model cascading), resilient output extraction, and safety governance.
 
 ---
 
-## Core Architecture
+## 🔍 Model Inventory & Ground-Truth Configuration
 
-### 1. The Orchestrator (`orchestrator.py`)
-- **Heterogeneous Multi-Agent Routing**: Uses distinct, specialized models for each agent role via configurable environment variables:
-  - **Planner** (`PLANNER_MODEL`): Decomposes user goals into structured JSON task graphs. Default: `nvidia/nemotron-3-ultra-550b-a55b:free` via OpenRouter.
-  - **Coder** (`CODER_MODEL`): Executes an iterative ReAct loop (up to 15 steps) with tool access to write files, run commands, and navigate the workspace. Default: `poolside/laguna-s-2.1:free`.
-  - **Reviewer** (`REVIEWER_MODEL`): Performs severity-tiered code review (CRITICAL/MAJOR/MINOR/RECOMMENDATION) and gates task completion. Default: `nvidia/nemotron-3-super-120b-a12b:free`.
-- **Multi-Engine Backend**: Supports `mlx`, `openrouter`, `openai`, `litellm`, and `ollama` engines simultaneously.
-- **Session Ledger (`core/session_ledger.py`)**: Append-only JSONL event log that deterministically projects model context via `derive_messages()`. Every tool call, model response, review verdict, and error is immutably recorded.
+Here is the exact model setup used by the system:
 
-### 2. Intelligent Failover Architecture
-- **Cloud → Local Hot-Swap**: When OpenRouter returns `429 Too Many Requests` or `402 Payment Required`, the orchestrator instantly hot-swaps the request to a local MLX model (`mlx-community/Nanbeige4.1-3B-heretic-4bit`) with zero queuing delay.
-- **Atomic Plan Synthesis**: If the Planner cannot decompose a goal into JSON subtasks after 3 feedback-driven retries, the system automatically synthesizes a default atomic task graph from the user's goal, ensuring the Coder agent always has work to execute.
+```
+                               ┌──────────────────────────────────────────────┐
+                               │           Multi-Agent Orchestrator           │
+                               │              (orchestrator.py)               │
+                               └──────────────────────┬───────────────────────┘
+                                                      │
+                       ┌──────────────────────────────┴──────────────────────────────┐
+                       ▼                                                             ▼
+         ┌───────────────────────────┐                                 ┌───────────────────────────┐
+         │  Primary: Cloud API Mode  │                                 │   Fallback / Local Mode   │
+         │       (OpenRouter)        │                                 │     (Apple MLX & Ollama)  │
+         └─────────────┬─────────────┘                                 └─────────────┬─────────────┘
+                       │                                                             │
+        ┌──────────────┼──────────────┐                               ┌──────────────┴──────────────┐
+        ▼              ▼              ▼                               ▼                             ▼
+   ┌─────────┐    ┌─────────┐    ┌──────────┐                 ┌───────────────┐             ┌───────────────┐
+   │ Planner │    │  Coder  │    │ Reviewer │                 │   Local MLX   │             │ Local Ollama  │
+   │Nemotron │    │ Laguna  │    │ Nemotron │                 │  (Port 8801)  │             │ (Port 11434)  │
+   │  550B   │    │  S 2.1  │    │120B Super│                 │Nanbeige 4.1 3B│             │   Ornith 9B   │
+   └─────────┘    └─────────┘    └──────────┘                 └───────────────┘             └───────────────┘
+```
 
-### 3. Resilient Output Parsing (`core/output_extractor.py`)
-- **Multi-Strategy JSON Extraction**: Handles direct JSON, markdown code fences, conversational preambles, and nested bracket structures via a 4-stage extraction pipeline:
-  1. Direct `json.loads()` attempt
-  2. Markdown fence regex extraction
-  3. Bracket-depth counting with string-literal awareness
-  4. Scanning `json.JSONDecoder.raw_decode()` fallback
+### 1. Primary: Cloud API Mode (OpenRouter Free Tier)
+When running in cloud mode (configured in `run_tests.sh`), the orchestrator splits responsibilities across 3 specialized models:
+- **Planner (`PLANNER_MODEL`)**: `nvidia/nemotron-3-ultra-550b-a55b:free` (1M context) — Decomposes high-level goals into atomic execution tasks.
+- **Coder (`CODER_MODEL`)**: `poolside/laguna-s-2.1:free` (262K context) — Generates code and executes tool actions in a ReAct loop.
+- **Reviewer (`REVIEWER_MODEL`)**: `nvidia/nemotron-3-super-120b-a12b:free` (262K context) — Inspects produced code and gates task completion.
 
-### 4. Feedback-Driven Recovery
-- **Planner Retry Loop**: On JSON parse failure, the orchestrator re-prompts the Planner with an explicit corrective instruction and a concrete format example (up to 3 attempts).
-- **Multi-Turn Self-Healing**: When the Reviewer rejects code, the Coder receives the review feedback and iterates up to 3 repair cycles with re-review after each attempt.
-
-### 5. Instruction Governance (`core/instruction_governance.py`)
-- **Reporails-Native Linter**: A deterministic rule engine (inspired by [Reporails CLI](https://github.com/reporails/cli)) that validates user goals against mechanical rules before execution:
-  - Blocks vague, overly broad, or dangerous instructions.
-  - Enforces specificity in file targets and scope.
-  - Runs without any external API dependency.
-
-### 6. Sandbox Execution Environment (`sandbox/venv_executor.py`)
-- **Native Venv Isolation**: Uses Python virtual environments (`venv`) with PTY-based subprocess execution for full terminal fidelity.
-- **Background Task Management**: Supports daemon processes via threaded output streaming.
-- **Process Group Cleanup**: Uses `os.killpg()` for clean teardown of entire process trees.
-
----
-
-## Safety & Security
-
-1. **Path Traversal Protection**: `_safe_path()` validates all file operations against the workspace boundary using trailing-separator-aware `startswith()` checks, preventing sibling directory escapes.
-2. **Command Safety Gate (`core/safety_gate.py`)**: Blocks dangerous shell commands (`rm -rf /`, `curl | bash`, etc.) before sandbox execution.
-3. **Tool Registry**: All 9 tools (`run_command`, `bash`, `write_file`, `edit_file`, `replace_file_content`, `read_file`, `list_dir`, `manage_task`, `update_plan`) are centrally registered with unified safety enforcement.
-4. **DPO Deduplication**: The reporter engine strips hex, UUID, and path data from raw crashes, generating deterministic structural hashes to prevent dataset pollution.
+### 2. Fallback / Local Mode (Apple Silicon)
+- **Local MLX Engine (Port 8801)**: Runs `mlx-community/Nanbeige4.1-3B-heretic-4bit`. Used as the zero-latency hot-swap target when OpenRouter returns `429 Too Many Requests` or `402 Payment Required`.
+- **Local Ollama Engine (Port 11434)**: Runs `ornith9b:latest` (6.5 GB). Available for 100% offline local development.
 
 ---
 
-## Supported Free Models (OpenRouter)
+## 🛠️ Core Engine Components
 
-The following free-tier models are tested and supported via the heterogeneous routing architecture:
+### 1. Orchestrator ReAct Loop (`orchestrator.py`)
+- **Outer Task Graph Loop**: Iterates through planned subtasks sequentially.
+- **Inner ReAct Step Loop**: Runs up to 15 iterations per subtask. Context is reconstructed strictly from the append-only event ledger via `derive_messages()`.
+- **Atomic Plan Synthesis**: If planner decomposition fails after 3 feedback attempts, the engine synthesizes an atomic single-task execution plan to ensure the Coder agent can proceed.
 
-| Model | Best Role | Context | Key Strength |
-|-------|-----------|---------|--------------|
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | Planner | 1M | Multi-step reasoning, orchestration |
-| `poolside/laguna-s-2.1:free` | Coder | 262K | 70.2% Terminal-Bench, agentic coding |
-| `nvidia/nemotron-3-super-120b-a12b:free` | Reviewer | 262K | Fast MoE, high accuracy |
-| `cohere/north-mini-code:free` | Coder (alt) | 256K | Terminal tasks, agent harnesses |
-| `dots-studio/dots-3-note-preview:free` | Planner (alt) | 512K | Coding, multi-step workflows |
-| `openai/gpt-oss-20b:free` | Reviewer (alt) | 131K | Function calling, structured output |
+### 2. Resilient Output Parsing (`core/output_extractor.py`)
+Multi-stage fallback extractor that handles noisy, non-deterministic model outputs:
+1. Direct `json.loads()`
+2. Markdown code block regex (` ```json ... ``` `)
+3. Outermost bracket-depth tracking (aware of string literals and escape characters)
+4. Streaming `json.JSONDecoder.raw_decode()`
 
-**Local Fallback**: `mlx-community/Nanbeige4.1-3B-heretic-4bit` via Apple MLX (zero-latency failover)
+### 3. Tool Pipeline & Sandbox
+- **Tool Registry**: Centrally dispatches 9 tools: `run_command`, `bash`, `write_file`, `edit_file`, `replace_file_content`, `read_file`, `list_dir`, `manage_task`, `update_plan`.
+- **Sandbox Executor (`sandbox/venv_executor.py`)**: Runs commands inside a dedicated `.test_venv` virtual environment with PTY support for terminal fidelity and background task tracking.
+- **Security Gate**: `_safe_path()` enforces workspace boundary containment to prevent directory traversal escapes. `core/safety_gate.py` denies dangerous shell patterns.
+
+### 4. Instruction Governance (`core/instruction_governance.py`)
+- **Native Linter**: Deterministically checks goals against rules (defined in `STRICT_RULES.md`) before running to prevent vague instructions, excessive scope, or forbidden commands.
 
 ---
 
-## Getting Started
+## 🚀 Quickstart
 
 ### Prerequisites
-- macOS (Apple Silicon optimized, 16GB RAM strict limit)
+- macOS on Apple Silicon (M-series)
 - Python 3.11+
-- `uv` or `pip` for dependency management
-- An [OpenRouter API key](https://openrouter.ai/) (free tier supported)
+- Virtual environment `tb-env`
 
-### Installation
+### Setup & Run
 ```bash
-# Clone the repository
-git clone https://github.com/adarrshpaul/skillopt-engine.git
-cd skillopt-engine
-
-# Create virtual environment
-python3 -m venv tb-env
+# 1. Activate virtual environment
 source tb-env/bin/activate
 
-# Install dependencies
-pip install pytest psutil anyio python-dotenv faiss-cpu sentence-transformers
+# 2. Configure environment (e.g. OpenRouter API Key)
+export OPENROUTER_API_KEY="your-key-here"
 
-# Set your OpenRouter API key
-echo "OPENROUTER_API_KEY=sk-or-..." > .env
-```
-
-### Running the Orchestrator
-```bash
-# Configure models in run_tests.sh, then:
-source tb-env/bin/activate
+# 3. Run test harness
 ./run_tests.sh
-
-# Or run directly:
-python3 -u orchestrator.py "Your coding goal here"
-```
-
-### Environment Variables
-```bash
-# Model routing (set per role)
-export PLANNER_ENGINE="openrouter"
-export PLANNER_URL="https://openrouter.ai/api/v1"
-export PLANNER_MODEL="nvidia/nemotron-3-ultra-550b-a55b:free"
-
-export CODER_ENGINE="openrouter"
-export CODER_URL="https://openrouter.ai/api/v1"
-export CODER_MODEL="poolside/laguna-s-2.1:free"
-
-export REVIEWER_ENGINE="openrouter"
-export REVIEWER_URL="https://openrouter.ai/api/v1"
-export REVIEWER_MODEL="nvidia/nemotron-3-super-120b-a12b:free"
 ```
 
 ---
 
-## Project Structure
+## 📁 Repository Map
+
 ```
-├── orchestrator.py              # Main multi-agent ReAct orchestrator
-├── model_router.py              # Engine/model routing configuration
-├── run_tests.sh                 # Test harness entry point
+├── orchestrator.py              # Multi-agent ReAct orchestrator
+├── model_router.py              # Role-to-endpoint routing registry
+├── run_tests.sh                 # Test runner entrypoint
 ├── core/
-│   ├── output_extractor.py      # Resilient JSON extraction from LLM output
-│   ├── instruction_governance.py # Reporails-native goal linting
-│   ├── session_ledger.py        # Append-only JSONL event ledger
-│   ├── task_ledger.py           # Markdown task tracking (Plans.md)
-│   ├── tool_pipeline.py         # Multi-grammar tool call parser
-│   ├── safety_gate.py           # Command safety evaluation
+│   ├── output_extractor.py      # Resilient JSON array and object extraction
+│   ├── instruction_governance.py# Reporails-native goal linter
+│   ├── session_ledger.py        # Append-only JSONL execution ledger
+│   ├── task_ledger.py           # Markdown task state tracker (Plans.md)
+│   ├── tool_pipeline.py         # Multi-grammar tool parsing engine
+│   ├── safety_gate.py           # Command validation floor
 │   └── compaction.py            # Context window compaction governor
 ├── sandbox/
-│   └── venv_executor.py         # PTY-based venv sandbox executor
-├── benchmark_free_models.py     # Free-tier model benchmark suite
-├── STRICT_RULES.md              # Instruction governance ruleset
-└── SYSTEM_ARCHITECTURE.md       # Detailed architecture documentation
+│   └── venv_executor.py         # PTY-based venv execution sandbox
+├── benchmark_free_models.py     # OpenRouter model evaluation suite
+└── STRICT_RULES.md              # Instruction governance rules
 ```
 
 ---

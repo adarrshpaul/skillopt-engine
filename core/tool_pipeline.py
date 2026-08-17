@@ -234,6 +234,14 @@ def _parse_args_string(tool_name: str, args_str: str) -> Dict[str, Any]:
                     result["symbol"] = pos_args[0]
                 if len(pos_args) >= 2 and "file_path" not in result:
                     result["file_path"] = pos_args[1]
+            elif tool_name in ("ask_human", "ask_user"):
+                if len(pos_args) >= 1 and "question" not in result:
+                    result["question"] = pos_args[0]
+            elif tool_name in ("delegate_task", "delegate"):
+                if len(pos_args) >= 1 and "role" not in result:
+                    result["role"] = pos_args[0]
+                if len(pos_args) >= 2 and "task" not in result:
+                    result["task"] = pos_args[1]
             else:
                 for idx, pa in enumerate(pos_args):
                     result[f"arg_{idx}"] = pa
@@ -276,6 +284,8 @@ def _parse_args_string(tool_name: str, args_str: str) -> Dict[str, Any]:
             return {"path": clean_str}
         if tool_name in ("find_definition", "find_references", "hover"):
             return {"symbol": clean_str}
+        if tool_name in ("ask_human", "ask_user"):
+            return {"question": clean_str}
 
     # Fallback Strategy: Named args key=value parsing via regex
     args: Dict[str, Any] = {}
@@ -291,6 +301,8 @@ def _parse_args_string(tool_name: str, args_str: str) -> Dict[str, Any]:
             return {"command": args_str.strip('"\'')}
         if tool_name in ("find_definition", "find_references", "hover"):
             return {"symbol": args_str.strip('"\'')}
+        if tool_name in ("ask_human", "ask_user"):
+            return {"question": args_str.strip('"\'')}
         return {"raw_arg": args_str.strip('"\'')}
 
     return args

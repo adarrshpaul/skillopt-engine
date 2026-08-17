@@ -1,7 +1,25 @@
 import os
 import sys
-from dotenv import load_dotenv
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+# Zero-dependency .env loader fallback
+if os.path.exists(".env"):
+    try:
+        with open(".env", "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k not in os.environ:
+                        os.environ[k] = v
+    except Exception:
+        pass
 import json
 import time
 import subprocess
@@ -24,8 +42,14 @@ from urllib.request import Request, urlopen
 
 # Heterogeneous Multi-Agent Architecture (Planner + Coder + Reviewer + MLX Fallback)
 import model_router
-from p3_faiss_worker import P3Worker
-import claw_compactor
+try:
+    from p3_faiss_worker import P3Worker
+except ImportError:
+    P3Worker = None
+try:
+    import claw_compactor
+except ImportError:
+    claw_compactor = None
 from sandbox.venv_executor import NativeVenvSandbox
 
 # Core Harness Framework (DeepSeek & Claude Code Harness Synthesis)
@@ -33,7 +57,8 @@ from core.session_ledger import JSONLSessionLedger, SessionEvent
 from core.safety_gate import evaluate_tool_call, Decision
 from core.tool_pipeline import ToolPipeline, ToolCall, ToolResult, parse_tool_calls_from_text
 from core.task_ledger import MarkdownTaskLedger, TaskSpec
-from core.compaction import CompactionGovernor, save_wip_state, restore_wip_state, clear_wip_state
+from core.compaction import CompactionGovernor, CognitiveMemory, save_wip_state, restore_wip_state, clear_wip_state
+from core.agent_config import agent_registry
 from core.output_extractor import extract_json_array, extract_json_object
 from core.lsp_client import (
     handle_find_definition,
@@ -138,6 +163,15 @@ You have these tools. Emit ONE tool call at a time inside <execute> tags. The sy
 11. **update_plan(new_tasks)** — Replace all remaining upcoming tasks with a new list of tasks. Each task must have {"step_id": int, "description": "...", "target_file": "..."}.
    <execute>update_plan([{"step_id": 3, "description": "Refactor router", "target_file": "router.py"}])</execute>
 
+12. **ask_human(question)** — Ask human developer for guidance or clarification when encountering ambiguity or critical decisions.
+   <execute>ask_human("Should palindrome check ignore whitespace and punctuation?")</execute>
+
+13. **delegate_task(role, task)** — Delegate research, debugging, or specialized subtasks to a specialized sub-agent (e.g. "researcher", "debugger", "reviewer").
+   <execute>delegate_task("researcher", "Find best python regex pattern for alphanumeric filtering")</execute>
+
+14. **run_python(code)** — Write and execute a raw Python script in the sandbox. Used for logic, math, loops, or complex data processing.
+   <execute>run_python("import math\\nprint(math.sqrt(16))")</execute>
+
 ## Workflow
 1. Use `find_definition`, `find_references`, and `document_symbols` to inspect code symbols semantically.
 2. Write code using write_file or replace_file_content.
@@ -167,7 +201,60 @@ If there are only MINOR, RECOMMENDATION, or no issues, respond with "APPROVE" fo
 Do not write the fixed code yourself.
 """
 
+class RateLimiter:
+    def __init__(self, rpm: int):
+        self.rpm = rpm
+        self.interval = 60.0 / rpm
+        self.last_request = 0.0
+    
+    def wait(self):
+        now = time.time()
+        elapsed = now - self.last_request
+        if elapsed < self.interval:
+            sleep_time = self.interval - elapsed
+            print(f"⏳ [RateLimiter] Proactive throttling for {sleep_time:.2f}s to respect limit...", flush=True)
+            time.sleep(sleep_time)
+        self.last_request = time.time()
+
+ENGINE_LIMITERS = {
+    "google": RateLimiter(rpm=10),      # Safe boundary for Gemini Flash (15 RPM max)
+    "mistral": RateLimiter(rpm=15),     # Safe boundary for Mistral free tier
+    "groq": RateLimiter(rpm=30),        # Safe boundary for Groq cloud
+    "openrouter": RateLimiter(rpm=15),  # Safe boundary for OpenRouter free tier (20 RPM max)
+}
+
+EXHAUSTED_ENGINES = set()
+
+def check_openrouter_quota():
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        return
+    try:
+        req = Request("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {api_key}"})
+        with urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            limit_rem = data.get("data", {}).get("limit_remaining")
+            if limit_rem is not None and limit_rem <= 0:
+                print(f"⚠️ [Orchestrator] OpenRouter pre-flight check failed (0 credits remaining). Disabling OpenRouter tier.", flush=True)
+                EXHAUSTED_ENGINES.add("openrouter")
+    except Exception as e:
+        print(f"⚠️ [Orchestrator] OpenRouter pre-flight quota check failed: {e}", flush=True)
+
 def query_model(base_url: str, system_prompt: str, user_prompt: str = None, messages: list = None, model_name: str = CODER_MODEL, engine: str = CODER_ENGINE, vector: str = None, alpha: float = 1.0, layer: int = 16, max_retries: int = 3, max_tokens: int = 2048) -> str:
+    if engine in EXHAUSTED_ENGINES:
+        print(f"⏭️  [Orchestrator] {engine.capitalize()} quota is globally exhausted in this session. Instantly cascading!", flush=True)
+        if engine == "google":
+            return query_model(base_url="https://api.mistral.ai/v1", system_prompt=system_prompt, user_prompt=user_prompt, messages=messages, model_name="mistral-large-latest", engine="mistral", vector=vector, alpha=alpha, layer=layer, max_retries=3, max_tokens=max_tokens)
+        elif engine == "mistral":
+            return query_model(base_url="https://api.groq.com/openai/v1", system_prompt=system_prompt, user_prompt=user_prompt, messages=messages, model_name="llama-3.3-70b-versatile", engine="groq", vector=vector, alpha=alpha, layer=layer, max_retries=3, max_tokens=max_tokens)
+        elif engine == "groq":
+            return query_model(base_url="https://openrouter.ai/api/v1", system_prompt=system_prompt, user_prompt=user_prompt, messages=messages, model_name="poolside/laguna-s-2.1:free", engine="openrouter", vector=vector, alpha=alpha, layer=layer, max_retries=3, max_tokens=max_tokens)
+        else:
+            return query_model(base_url="http://localhost:8801/v1", system_prompt=system_prompt, user_prompt=user_prompt, messages=messages, model_name="mlx-community/Nanbeige4.1-3B-heretic-4bit", engine="mlx", vector=vector, alpha=alpha, layer=layer, max_retries=3, max_tokens=max_tokens)
+
+    if engine in ENGINE_LIMITERS:
+        ENGINE_LIMITERS[engine].wait()
+
     msg_array = messages if messages is not None else [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
@@ -202,7 +289,7 @@ def query_model(base_url: str, system_prompt: str, user_prompt: str = None, mess
         print(f"❌ [Orchestrator Error] All {max_retries} attempts to contact MLX Server failed.", flush=True)
         raise RuntimeError(f"All {max_retries} attempts to contact MLX Server failed.")
         
-    if engine in ("openrouter", "openai", "litellm"):
+    if engine in ("openrouter", "openai", "litellm", "mistral", "google", "groq"):
         log_trace(f"Querying {engine.upper()} API for {model_name}...")
         payload = {
             "model": model_name,
@@ -211,15 +298,30 @@ def query_model(base_url: str, system_prompt: str, user_prompt: str = None, mess
             "temperature": 0.2
         }
         url = f"{base_url.rstrip('/')}/chat/completions"
-        api_key = os.environ.get("OPENROUTER_API_KEY", "") if engine == "openrouter" else os.environ.get("OPENAI_API_KEY", "")
-        headers = {"Content-Type": "application/json"}
+        if engine == "openrouter":
+            api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        elif engine == "mistral":
+            api_key = os.environ.get("MISTRAL_API_KEY", "")
+        elif engine == "google":
+            api_key = os.environ.get("GOOGLE_API_KEY", "")
+        elif engine == "groq":
+            api_key = os.environ.get("GROQ_API_KEY", "")
+        else:
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Terminal-Bench-Orchestrator/1.0 (Macintosh; Apple Silicon)"
+        }
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
             if engine == "openrouter":
                 headers["HTTP-Referer"] = "http://localhost:8800"
                 headers["X-Title"] = "Terminal-Bench-Orchestrator"
 
-        actual_max_retries = 10 if engine == "openrouter" else max_retries
+        if engine in ("openrouter", "mistral", "google", "groq"):
+            actual_max_retries = 2
+        else:
+            actual_max_retries = min(2, max_retries)
         for attempt in range(1, actual_max_retries + 1):
             start_time = time.time()
             try:
@@ -230,26 +332,106 @@ def query_model(base_url: str, system_prompt: str, user_prompt: str = None, mess
                     msg = data["choices"][0].get("message", {})
                     resp_text = msg.get("content") or msg.get("reasoning") or ""
                     log_trace(f"Response from {engine} in {elapsed:.2f}s ({len(resp_text)} chars)")
+                    
+                    if engine == "mistral" and hasattr(resp, "headers"):
+                        rem_reqs = resp.headers.get("x-ratelimit-remaining-req-minute")
+                        rem_tokens = resp.headers.get("x-ratelimit-remaining-tokens-minute")
+                        if rem_reqs and rem_reqs.isdigit() and int(rem_reqs) < 2:
+                            print(f"⚠️ [Orchestrator] Mistral requests nearly exhausted ({rem_reqs} left). Forcing 2s sleep...", flush=True)
+                            time.sleep(2)
+                        elif rem_tokens and rem_tokens.isdigit() and int(rem_tokens) < 1000:
+                            print(f"⚠️ [Orchestrator] Mistral tokens nearly exhausted ({rem_tokens} left). Forcing 2s sleep...", flush=True)
+                            time.sleep(2)
+                            
                     return resp_text
             except urllib.error.HTTPError as e:
                 elapsed = time.time() - start_time
-                if e.code in (402, 429):
+                if e.code in (401, 402, 403, 429, 503):
                     log_trace(f"Attempt {attempt}/{actual_max_retries} {engine} API failed: {e}")
-                    print(f"⚠️ [Orchestrator] OpenRouter Limit Reached ({e.code}). Hot-swapping to Local MLX Fallback!", flush=True)
-                    # Instant seamless fallback to local M-Series model
-                    return query_model(
-                        base_url="http://localhost:8801/v1",
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt,
-                        messages=messages,
-                        model_name="mlx-community/Nanbeige4.1-3B-heretic-4bit",
-                        engine="mlx",
-                        vector=vector,
-                        alpha=alpha,
-                        layer=layer,
-                        max_retries=3,
-                        max_tokens=max_tokens
-                    )
+                    
+                    dynamic_backoff = None
+                    try:
+                        retry_after = e.headers.get("retry-after")
+                        reset_val = e.headers.get("x-ratelimit-reset") or e.headers.get("x-ratelimit-reset-tokens") or e.headers.get("x-ratelimit-reset-requests")
+                        
+                        if retry_after and retry_after.replace('.', '', 1).isdigit():
+                            dynamic_backoff = float(retry_after)
+                        elif reset_val:
+                            if reset_val.endswith('ms'):
+                                dynamic_backoff = float(reset_val[:-2]) / 1000.0
+                            elif reset_val.endswith('s'):
+                                dynamic_backoff = float(reset_val[:-1])
+                            elif reset_val.replace('.', '', 1).isdigit():
+                                val = float(reset_val)
+                                dynamic_backoff = max(0.1, val - time.time()) if val > 1_000_000_000 else val
+                    except Exception:
+                        pass
+                        
+                    if e.code in (429, 503):
+                        backoff = dynamic_backoff if dynamic_backoff is not None else (5 * attempt)
+                        print(f"⚠️ [Attempt {attempt}/{actual_max_retries}] {engine.capitalize()} Rate/Load Limited ({e.code}). Sleeping for {backoff:.2f}s...", flush=True)
+                        if attempt < actual_max_retries:
+                            time.sleep(backoff)
+                            continue
+                        else:
+                            print(f"⚠️ [Orchestrator] {engine.capitalize()} Limit Exhausted (429). Cascading!", flush=True)
+                            EXHAUSTED_ENGINES.add(engine)
+                    elif e.code in (401, 403):
+                        print(f"⚠️ [Orchestrator] {engine.capitalize()} Access Denied ({e.code}). Cascading!", flush=True)
+                        EXHAUSTED_ENGINES.add(engine)
+                    elif e.code == 402:
+                        print(f"⚠️ [Orchestrator] {engine.capitalize()} Credits Exhausted (402). Cascading!", flush=True)
+                        EXHAUSTED_ENGINES.add(engine)
+
+                    if engine == "google":
+                        print(f"⚠️ [Orchestrator] Google Limit Reached ({e.code}). Cascading to Mistral!", flush=True)
+                        return query_model(
+                            base_url="https://api.mistral.ai/v1",
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            messages=messages,
+                            model_name="mistral-large-latest",
+                            engine="mistral",
+                            vector=vector, alpha=alpha, layer=layer, max_retries=3, max_tokens=max_tokens
+                        )
+                    elif engine == "mistral":
+                        print(f"⚠️ [Orchestrator] Mistral Limit Reached ({e.code}). Cascading to Groq!", flush=True)
+                        return query_model(
+                            base_url="https://api.groq.com/openai/v1",
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            messages=messages,
+                            model_name="llama-3.3-70b-versatile",
+                            engine="groq",
+                            vector=vector, alpha=alpha, layer=layer, max_retries=3, max_tokens=max_tokens
+                        )
+                    elif engine == "groq":
+                        print(f"⚠️ [Orchestrator] Groq Limit Reached ({e.code}). Cascading to OpenRouter!", flush=True)
+                        return query_model(
+                            base_url="https://openrouter.ai/api/v1",
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            messages=messages,
+                            model_name="poolside/laguna-s-2.1:free",
+                            engine="openrouter",
+                            vector=vector, alpha=alpha, layer=layer, max_retries=3, max_tokens=max_tokens
+                        )
+                    else:
+                        print(f"⚠️ [Orchestrator] {engine} Limit Reached ({e.code}). Hot-swapping to Local MLX Fallback!", flush=True)
+                        # Instant seamless fallback to local M-Series model
+                        return query_model(
+                            base_url="http://localhost:8801/v1",
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            messages=messages,
+                            model_name="mlx-community/Nanbeige4.1-3B-heretic-4bit",
+                            engine="mlx",
+                            vector=vector,
+                            alpha=alpha,
+                            layer=layer,
+                            max_retries=3,
+                            max_tokens=max_tokens
+                        )
                 else:
                     log_trace(f"Attempt {attempt}/{actual_max_retries} {engine} API failed after {elapsed:.2f}s: {e}")
                     print(f"⚠️ [Attempt {attempt}/{actual_max_retries}] {engine} query failed ({e}).", flush=True)
@@ -528,6 +710,74 @@ def _handle_update_plan(args, context):
         return f"Successfully updated plan. {len(new_tasks)} new tasks queued."
     return "ERROR: task_graph context not available."
 
+def _handle_ask_human(args, context):
+    question = str(args.get("question", args.get("prompt", args.get("raw_arg", ""))))
+    if not question:
+        return "ERROR: ask_human requires a 'question' argument."
+    print(f"\n{'='*55}", flush=True)
+    print(f"🧑‍💻 [Human-in-the-Loop] Agent Question:\n   {question}", flush=True)
+    print(f"{'='*55}\n", flush=True)
+    
+    if context.get("interactive", False) or (hasattr(sys, "stdin") and sys.stdin and sys.stdin.isatty()):
+        try:
+            response = input("👉 Enter guidance for the agent: ")
+            if response.strip():
+                return f"[Human Response]: {response.strip()}"
+        except (EOFError, KeyboardInterrupt):
+            pass
+    return "[Human Response]: No interactive terminal attached. Proceed using best engineering practices and minimal assumptions."
+
+def _handle_delegate_task(args, context):
+    role = str(args.get("role", args.get("agent", "researcher"))).lower().strip()
+    task = str(args.get("task", args.get("instruction", args.get("query", ""))))
+    if not task:
+        return "ERROR: delegate_task requires 'role' and 'task' arguments."
+    
+    spec = agent_registry.get(role)
+    print(f"   🤝 [Delegation] Delegating subtask to @{spec.role} ({spec.model})...", flush=True)
+    
+    system_prompt = spec.get_full_prompt()
+    try:
+        sub_resp = query_model(
+            base_url=FALLBACK_URL,
+            system_prompt=system_prompt,
+            user_prompt=f"Subtask Delegated by Main Developer:\n{task}",
+            model_name=spec.model,
+            engine=spec.engine,
+            max_tokens=2048
+        )
+        return f"[{spec.role} Output]:\n{sub_resp.strip()}"
+    except Exception as e:
+        return f"ERROR: Subagent delegation to {role} failed: {e}"
+
+def _handle_run_python(args, context):
+    code = str(args.get("code", args.get("script", args.get("raw_arg", ""))))
+    if not code:
+        return "ERROR: run_python requires 'code' argument."
+    
+    import uuid
+    import os
+    tmp_script = f".agent_script_{uuid.uuid4().hex[:8]}.py"
+    abs_path = os.path.join(context["workspace_root"], tmp_script)
+    
+    try:
+        with open(abs_path, "w") as f:
+            f.write(code)
+            
+        print(f"   🐍 [Python Execution] Running {len(code)} bytes of Python code...", flush=True)
+        sandbox = context["sandbox"]
+        exit_code, stdout, stderr = sandbox.run_command(f"python3 {tmp_script}", timeout=120)
+        
+        result = f"Exit code: {exit_code}\\n"
+        if stdout.strip():
+            result += f"stdout:\\n{stdout[-3000:]}\\n"
+        if stderr.strip():
+            result += f"stderr:\\n{stderr[-2000:]}\\n"
+        return result
+    finally:
+        if os.path.exists(abs_path):
+            os.remove(abs_path)
+
 tool_registry.register("run_command", _handle_run_command)
 tool_registry.register("bash", _handle_run_command)
 tool_registry.register("manage_task", _handle_manage_task)
@@ -537,6 +787,11 @@ tool_registry.register("edit_file", _handle_replace_file_content)
 tool_registry.register("read_file", _handle_read_file)
 tool_registry.register("list_dir", _handle_list_dir)
 tool_registry.register("update_plan", _handle_update_plan)
+tool_registry.register("ask_human", _handle_ask_human)
+tool_registry.register("ask_user", _handle_ask_human)
+tool_registry.register("delegate_task", _handle_delegate_task)
+tool_registry.register("delegate", _handle_delegate_task)
+tool_registry.register("run_python", _handle_run_python)
 tool_registry.register("find_definition", handle_find_definition)
 tool_registry.register("find_references", handle_find_references)
 tool_registry.register("document_symbols", handle_document_symbols)
@@ -641,6 +896,7 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
     ledger = JSONLSessionLedger(runs_dir / f"session_{session_id}.jsonl", session_id=session_id)
     task_ledger = MarkdownTaskLedger("Plans.md")
     compactor_gov = CompactionGovernor(token_limit=16000, trigger_ratio=0.85)
+    cognitive_mem = CognitiveMemory()
 
     if start_task_idx == 0:
         ledger.append(SessionEvent(event_type="goal/start", payload={"goal": goal, "vector": vector, "alpha": alpha}))
@@ -812,6 +1068,11 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
                 
             ledger.append(SessionEvent(event_type="system/update", payload={"message": "Hint: Use `list_dir` and `read_file` to explore the workspace files as needed."}))
 
+            # Inject Cognitive Memory Context
+            cog_context = cognitive_mem.format_prompt_injection(f"{goal} {desc}")
+            if cog_context:
+                ledger.append(SessionEvent(event_type="system/update", payload={"message": cog_context}))
+
             
             # Inject relevant JIT skills
             try:
@@ -832,6 +1093,7 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
             
             for step in range(1, MAX_REACT_STEPS + 1):
                 print(f"   🔄 [ReAct Step {step}/{MAX_REACT_STEPS}]", flush=True)
+                time.sleep(2)  # Throttle to prevent 429 rate limits on free tiers
                 ledger.append(SessionEvent(event_type="step/start", payload={"step": step, "task_id": task_tid}))
                 
                 # Derive exact model context from the ledger
@@ -921,6 +1183,7 @@ def run_task_graph(goal: str, vector: str = None, alpha: float = 1.0, layer: int
                 task_ledger.update_status(task_tid, "blocked")
             else:
                 task_ledger.update_status(task_tid, "done")
+                cognitive_mem.record("discovery", f"Task {step_id} completed successfully: {desc} (Target: {target_file})", source_task=task_tid)
             
             # Final quality gate: Checker reviews what was produced
             if target_file and os.path.exists(target_file):
@@ -1041,4 +1304,5 @@ if __name__ == "__main__":
     parser.add_argument("--interactive", action="store_true", help="Enable interactive approval gates for destructive commands")
     args = parser.parse_args()
 
+    check_openrouter_quota()
     run_task_graph(args.goal, vector=args.vector, alpha=args.alpha, layer=args.layer, interactive=args.interactive)

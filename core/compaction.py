@@ -7,6 +7,7 @@ Guarantees zero work loss during context window compaction or long-turn agent ha
 import json
 import time
 import os
+import re
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Dict, Any, List, Union
@@ -131,6 +132,22 @@ class CompactionGovernor:
 
     def should_compact(self, current_tokens: int) -> bool:
         return current_tokens >= self.trigger_threshold
+
+    def _get_exact_gemini_tokens(self, messages: List[Dict[str, Any]]) -> Optional[int]:
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            return None
+        try:
+            raw_text = "\n".join(str(m.get("content", "")) for m in messages)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:countTokens?key={api_key}"
+            payload = {"contents": [{"parts": [{"text": raw_text}]}]}
+            import urllib.request
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data.get("totalTokens")
+        except Exception:
+            return None
 
     def pre_compact(
         self,
@@ -270,6 +287,13 @@ class CompactionGovernor:
         Evaluates token volume, executes Tier 1 if needed, and falls back to Tier 2.
         """
         token_est = estimate_tokens(current_messages)
+        
+        # If heuristic is close, ping the exact API
+        if token_est >= self.trigger_threshold * 0.70:
+            exact = self._get_exact_gemini_tokens(current_messages)
+            if exact is not None:
+                token_est = exact
+                print(f"📊 [CompactionGovernor] Precise API Token Count: {token_est} (Limit: {self.token_limit})", flush=True)
         stats = {
             "initial_tokens": token_est,
             "tier1_evictions": 0,
@@ -311,3 +335,84 @@ class CompactionGovernor:
                 stats["tier2_error"] = str(e)
 
         return stats
+
+
+@dataclass
+class CognitiveInsight:
+    category: str  # "discovery", "error_fix", "api_pattern", "constraint"
+    insight: str
+    source_task: str
+    timestamp: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+class CognitiveMemory:
+    """
+    CrewAI-inspired Cognitive Memory system.
+    Persists distilled insights, discovered patterns, and error fixes across tasks and sessions.
+    """
+    def __init__(self, memory_file: str = ".cognitive_memory.json"):
+        self.memory_file = Path(memory_file)
+        self.insights: List[CognitiveInsight] = []
+        self.load()
+
+    def load(self) -> None:
+        if self.memory_file.exists():
+            try:
+                data = json.loads(self.memory_file.read_text(encoding="utf-8"))
+                self.insights = [CognitiveInsight(**d) for d in data if isinstance(d, dict)]
+            except Exception:
+                self.insights = []
+
+    def save(self) -> None:
+        try:
+            self.memory_file.parent.mkdir(parents=True, exist_ok=True)
+            self.memory_file.write_text(
+                json.dumps([i.to_dict() for i in self.insights], indent=2),
+                encoding="utf-8"
+            )
+        except Exception:
+            pass
+
+    def record(self, category: str, insight: str, source_task: str = "") -> None:
+        if not insight or len(insight.strip()) < 10:
+            return
+        # Deduplicate
+        clean = insight.strip()
+        for existing in self.insights:
+            if existing.insight.lower() == clean.lower():
+                return
+        self.insights.append(CognitiveInsight(category=category, insight=clean, source_task=source_task))
+        self.save()
+
+    def query(self, context_text: str, top_k: int = 3) -> List[CognitiveInsight]:
+        """Simple keyword/token overlap relevance retrieval."""
+        if not self.insights:
+            return []
+        words = set(re.findall(r'\w+', context_text.lower()))
+        if not words:
+            return self.insights[-top_k:]
+
+        scored = []
+        for i in self.insights:
+            insight_words = set(re.findall(r'\w+', i.insight.lower()))
+            overlap = len(words.intersection(insight_words))
+            scored.append((overlap, i))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        results = [item for score, item in scored if score > 0][:top_k]
+        if not results and self.insights:
+            return self.insights[-top_k:]
+        return results
+
+    def format_prompt_injection(self, context_text: str) -> str:
+        relevant = self.query(context_text, top_k=3)
+        if not relevant:
+            return ""
+        lines = ["[COGNITIVE MEMORY: RELEVANT HISTORICAL INSIGHTS]"]
+        for r in relevant:
+            lines.append(f"- [{r.category.upper()}] {r.insight}")
+        lines.append("[END COGNITIVE MEMORY]\n")
+        return "\n".join(lines)
